@@ -1,0 +1,11 @@
+# Thư mục này chứa file .pt (model weights) của YOLOv8.
+# Không commit file .pt lên Git — sử dụng Git LFS hoặc tải thủ công.
+#
+# Cách sử dụng:
+#   1. Train model hoặc download pretrained weights.
+#   2. Đặt file vào đây và đặt tên là best.pt (hoặc cập nhật MODEL_PATH trong .env).
+#
+# Ví dụ download YOLOv8n pretrained:
+#   from ultralytics import YOLO
+#   model = YOLO("yolov8n.pt")   # tự động download
+#   model.export(format="pt")
