@@ -1,0 +1,175 @@
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.metricCard {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.metricIconWrapper {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.metricValue {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--on-surface);
+  margin-top: 4px;
+}
+
+.metricTitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+  text-transform: uppercase;
+}
+
+.mainGrid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 1024px) {
+  .mainGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.feedCard {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.cardTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--on-surface);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-success);
+  box-shadow: 0 0 8px var(--color-success);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
+
+.canvasContainer {
+  background-color: #000000;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--outline-variant);
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16/9;
+}
+
+.videoCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.feedInfo {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background-color: rgba(0, 0, 0, 0.65);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffffff;
+  backdrop-filter: blur(4px);
+  z-index: 5;
+}
+
+.feedOverlay {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background-color: rgba(0, 0, 0, 0.65);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  color: #7dd3fc;
+  backdrop-filter: blur(4px);
+  z-index: 5;
+}
+
+.alertsCard {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.alertsList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+  list-style: none;
+}
+
+.alertItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border-left: 4px solid transparent;
+  background-color: var(--surface-low);
+  transition: transform 0.2s ease;
+}
+
+.alertItem:hover {
+  transform: translateX(4px);
+}
+
+.alertContent {
+  flex: 1;
+}
+
+.alertHeading {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.alertMeta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  margin-top: 4px;
+}

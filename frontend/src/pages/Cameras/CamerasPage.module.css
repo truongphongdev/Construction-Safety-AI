@@ -1,0 +1,512 @@
+.topBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.camerasGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.cameraCard {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.streamContainer {
+  background-color: #0b0f19;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--outline-variant);
+  aspect-ratio: 16/9;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.streamPlaceholder {
+  color: var(--on-surface-variant);
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.camName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.camLocation {
+  font-size: 11px;
+  color: var(--on-surface-variant);
+}
+
+.canvas {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.badgeOverlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background-color: rgba(0, 0, 0, 0.65);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  color: #ffffff;
+  font-weight: 500;
+  z-index: 2;
+}
+
+.statusIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.statusCircle {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* Redesigned Camera Stream Actions */
+.videoStream {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.powerBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  color: #ffffff;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 5;
+}
+
+.powerBtn:hover {
+  background-color: rgba(239, 68, 68, 0.9);
+  border-color: rgba(239, 68, 68, 0.4);
+  transform: scale(1.1);
+}
+
+/* Floating AI Overlays on Videos */
+.videoOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.detectBox {
+  position: absolute;
+  border: 2px solid var(--error);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+}
+
+.detectLabel {
+  position: absolute;
+  top: -16px;
+  left: -2px;
+  background-color: var(--error);
+  color: #ffffff;
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+/* Zoom Camera Feed Modal Overlay */
+.zoomModalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.zoomCard {
+  width: 920px;
+  max-width: 95vw;
+  background-color: var(--surface-lowest);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--outline-variant);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: zoomIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: var(--shadow-lg);
+}
+
+.zoomHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--outline-variant);
+  background-color: var(--surface-lowest);
+}
+
+.zoomTitleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.zoomTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.zoomSubtitle {
+  font-size: 11px;
+  color: var(--on-surface-variant);
+}
+
+.zoomCloseBtn {
+  background: transparent;
+  border: none;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  transition: all 0.2s;
+}
+
+.zoomCloseBtn:hover {
+  background-color: var(--surface-container);
+  color: var(--on-surface);
+}
+
+.zoomControlBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-container);
+  color: var(--on-surface);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btnOnline {
+  color: var(--color-success);
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.05);
+}
+
+.btnOnline:hover {
+  background: rgba(74, 222, 128, 0.15);
+}
+
+.btnOffline {
+  color: var(--outline);
+  border-color: var(--outline-variant);
+  background: var(--surface-container);
+}
+
+.btnOffline:hover {
+  background: var(--surface-high);
+}
+
+.zoomBodyGrid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+}
+
+@media (max-width: 768px) {
+  .zoomBodyGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.zoomStreamContainer {
+  aspect-ratio: 16/9;
+  background-color: #0b0f19;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.zoomVideoWrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.zoomVideo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.zoomPlaceholder {
+  color: var(--on-surface-variant);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 12px;
+  font-size: 14px;
+  width: 100%;
+  height: 100%;
+  min-height: 280px;
+}
+
+.zoomTelemetryPanel {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-left: 1px solid var(--outline-variant);
+  background-color: var(--surface-low);
+}
+
+@media (max-width: 768px) {
+  .zoomTelemetryPanel {
+    border-left: none;
+    border-top: 1px solid var(--outline-variant);
+  }
+}
+
+.panelSectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--on-surface-variant);
+  margin-bottom: 4px;
+}
+
+.telemetryStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.statCard {
+  background-color: var(--surface-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.statLabel {
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  font-weight: 500;
+}
+
+.statValue {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.logsContainer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.logsLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.logsList {
+  background-color: #05070f;
+  border-radius: var(--radius-md);
+  padding: 12px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #a1a1aa;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 150px;
+  overflow-y: auto;
+  height: 150px;
+  border: 1px solid var(--outline-variant);
+}
+
+.logRow {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #4ade80;
+}
+
+.logRow:nth-child(even) {
+  color: #38bdf8;
+}
+
+.modelMeta {
+  border-top: 1px dashed var(--outline-variant);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metaRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.metaLabel {
+  color: var(--on-surface-variant);
+}
+
+.metaValue {
+  color: var(--on-surface);
+  font-weight: 500;
+}
+
+.telemetryOfflineMessage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--on-surface-variant);
+  padding: 48px 12px;
+  flex: 1;
+}
+
+.telemetryOfflineMessage p {
+  font-size: 12px;
+  margin-top: 4px;
+  opacity: 0.8;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes zoomIn {
+  from { transform: scale(0.96); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* File Upload Controls */
+.fileUploadContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.fileUploadBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 38px;
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--outline-variant);
+  background-color: var(--surface-low);
+  color: var(--on-surface);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.fileUploadBtn:hover {
+  border-color: var(--primary);
+  background-color: var(--surface-container);
+  color: var(--primary);
+}
+
+.fileNameDisplay {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background-color: rgba(22, 163, 74, 0.05);
+  color: var(--color-success);
+  font-size: 12px;
+  border: 1px solid rgba(74, 222, 128, 0.2);
+  width: 100%;
+}
+
+.fileName {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--on-surface);
+  font-weight: 500;
+  flex: 1;
+}

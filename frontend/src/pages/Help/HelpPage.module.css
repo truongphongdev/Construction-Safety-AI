@@ -1,0 +1,45 @@
+.card {
+  padding: 24px;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--on-surface);
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sectionTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--on-surface);
+  border-bottom: 1px solid var(--outline-variant);
+  padding-bottom: 8px;
+}
+
+.faqItem {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.question {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.answer {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--on-surface-variant);
+}
