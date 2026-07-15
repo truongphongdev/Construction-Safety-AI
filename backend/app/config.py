@@ -12,25 +12,29 @@ class Settings(BaseSettings):
         "Detects missing PPE, restricted zone intrusion, and fall events."
     )
     VERSION: str = "0.1.0"
-    ENVIRONMENT: str = "development"   # development | staging | production
+    ENVIRONMENT: str   # development | staging | production
 
     # ── CORS ──────────────────────────────────────────────────────────────────
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    ALLOWED_ORIGINS: List[str]
 
     # ── AI / Model ────────────────────────────────────────────────────────────
-    MODEL_PATH: str = "ai/weights/best.pt"
-    CONFIDENCE_THRESHOLD: float = 0.5
-    IOU_THRESHOLD: float = 0.45
-    DEVICE: str = "cpu"            # "cpu" | "cuda" | "mps"
+    MODEL_PATH: str
+    CONFIDENCE_THRESHOLD: float
+    IOU_THRESHOLD: float
+    DEVICE: str            # "cpu" | "cuda" | "mps"
 
     # ── Server ────────────────────────────────────────────────────────────────
-    HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    HOST: str
+    PORT: int
+
+    # ── Database ──────────────────────────────────────────────────────────────
+    DATABASE_URL: str
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
+        extra="ignore",
     )
 
 

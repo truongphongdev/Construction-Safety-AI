@@ -1,4 +1,4 @@
-﻿annotated-doc==0.0.4
+annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.14.1
 certifi==2026.6.17
@@ -54,3 +54,6 @@ ultralytics==8.4.92
 ultralytics-thop==2.0.20
 urllib3==2.7.0
 uvicorn==0.51.0
+SQLAlchemy==2.0.28
+psycopg2-binary==2.9.12
+alembic==1.13.1
