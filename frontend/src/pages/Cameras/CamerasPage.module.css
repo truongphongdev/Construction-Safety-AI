@@ -265,7 +265,7 @@
 
 .zoomBodyGrid {
   display: grid;
-  grid-template-columns: 1.6fr 1fr;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
 }
 
 @media (max-width: 768px) {
@@ -275,6 +275,7 @@
 }
 
 .zoomStreamContainer {
+  width: 100%;
   aspect-ratio: 16/9;
   background-color: #0b0f19;
   display: flex;
@@ -282,6 +283,7 @@
   justify-content: center;
   position: relative;
   overflow: hidden;
+  align-self: start;
 }
 
 .zoomVideoWrapper {
@@ -510,3 +512,133 @@
   font-weight: 500;
   flex: 1;
 }
+
+/* Delete button on card */
+.deleteBtn {
+  position: absolute;
+  top: 8px;
+  right: 44px;
+  background-color: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  color: #ffffff;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 5;
+}
+
+.deleteBtn:hover {
+  background-color: #ef4444;
+  border-color: #ef4444;
+  transform: scale(1.1);
+}
+
+/* Delete button in Zoom Modal */
+.zoomDeleteBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.05);
+  color: #ef4444;
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.zoomDeleteBtn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+/* AI Model selection dropdown in Zoom Modal */
+.modelSelect {
+  background-color: var(--surface-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--on-surface);
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.modelSelect:focus {
+  border-color: var(--primary);
+}
+
+.modelSelect:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.camModelsContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.modelBadge {
+  background-color: rgba(37, 99, 235, 0.1);
+  color: var(--primary);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.modelBadgeNone {
+  background-color: var(--surface-container);
+  color: var(--on-surface-variant);
+  border: 1px solid var(--outline-variant);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 9px;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.modelsChecklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  background-color: var(--surface-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+
+.modelCheckboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--on-surface);
+  cursor: pointer;
+  user-select: none;
+}
+
+.modelCheckbox {
+  accent-color: var(--primary);
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+}
+
+.modelCheckboxText {
+  font-weight: 500;
+}
+

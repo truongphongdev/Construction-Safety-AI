@@ -3,8 +3,6 @@ import { MainLayout, AuthLayout } from '@/layouts';
 import {
   DashboardPage,
   CamerasPage,
-  AIModelsPage,
-  ModelRegistryPage,
   ViolationsPage,
   ReportsPage,
   SettingsPage,
@@ -32,8 +30,6 @@ function App() {
         <Route element={<MainLayout />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/cameras" element={<CamerasPage />} />
-          <Route path="/models" element={<AIModelsPage />} />
-          <Route path="/models-library" element={<ModelRegistryPage />} />
           <Route path="/violations" element={<ViolationsPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/settings" element={<SettingsPage />} />

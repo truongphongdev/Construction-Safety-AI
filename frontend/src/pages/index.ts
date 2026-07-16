@@ -1,7 +1,5 @@
 export { default as DashboardPage } from './Dashboard';
 export { default as CamerasPage } from './Cameras';
-export { default as AIModelsPage } from './AIModels';
-export { default as ModelRegistryPage } from './ModelRegistry';
 export { default as ViolationsPage } from './Violations';
 export { default as ReportsPage } from './Reports';
 export { default as SettingsPage } from './Settings';

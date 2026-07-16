@@ -7,24 +7,25 @@ interface Camera {
   location: string;
   status: 'online' | 'offline';
   ipAddress: string;
-  model: string;
+  models: string[]; // List of active AI models
   videoUrl?: string; // Optional URL for demo video
 }
 
 export default function CamerasPage() {
   const [cameras, setCameras] = useState<Camera[]>([
-    { id: '01', name: 'CAM-01', location: 'Cổng chính (Main Gate)', status: 'online', ipAddress: '192.168.1.101', model: 'YOLOv8 Security Suite', videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-security-camera-footage-of-a-corridor-42404-large.mp4' },
-    { id: '02', name: 'CAM-02', location: 'Sảnh đón khách (Lobby)', status: 'online', ipAddress: '192.168.1.102', model: 'YOLOv8 Security Suite', videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-people-walking-in-a-modern-office-43026-large.mp4' },
-    { id: '03', name: 'CAM-03', location: 'Kho hàng B (Warehouse B)', status: 'online', ipAddress: '192.168.1.103', model: 'YOLOv8 Security Suite' },
-    { id: '04', name: 'CAM-04', location: 'Xưởng đóng gói (Packaging)', status: 'online', ipAddress: '192.168.1.104', model: 'YOLOv8 Security Suite', videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-industrial-robotic-arms-welding-components-48906-large.mp4' },
-    { id: '05', name: 'CAM-05', location: 'Văn phòng hành chính', status: 'online', ipAddress: '192.168.1.105', model: 'YOLOv8 Security Suite', videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-security-guard-monitoring-in-control-room-42401-large.mp4' },
-    { id: '06', name: 'CAM-06', location: 'Cổng phụ xe tải', status: 'offline', ipAddress: '192.168.1.106', model: 'Không cấu hình' }
+    { id: '01', name: 'CAM-01', location: 'Cổng chính (Main Gate)', status: 'online', ipAddress: '192.168.1.101', models: ['YOLOv8 Security Suite'], videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-security-camera-footage-of-a-corridor-42404-large.mp4' },
+    { id: '02', name: 'CAM-02', location: 'Sảnh đón khách (Lobby)', status: 'online', ipAddress: '192.168.1.102', models: ['YOLOv8 Security Suite', 'PPE Classifier ResNet'], videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-people-walking-in-a-modern-office-43026-large.mp4' },
+    { id: '03', name: 'CAM-03', location: 'Kho hàng B (Warehouse B)', status: 'online', ipAddress: '192.168.1.103', models: ['YOLOv8 Security Suite'] },
+    { id: '04', name: 'CAM-04', location: 'Xưởng đóng gói (Packaging)', status: 'online', ipAddress: '192.168.1.104', models: ['YOLOv8 Security Suite', 'YOLOv5 Fire Detector'], videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-industrial-robotic-arms-welding-components-48906-large.mp4' },
+    { id: '05', name: 'CAM-05', location: 'Văn phòng hành chính', status: 'online', ipAddress: '192.168.1.105', models: ['YOLOv8 Security Suite', 'PPE Classifier ResNet', 'YOLOv5 Fire Detector'], videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-security-guard-monitoring-in-control-room-42401-large.mp4' },
+    { id: '06', name: 'CAM-06', location: 'Cổng phụ xe tải', status: 'offline', ipAddress: '192.168.1.106', models: [] }
   ]);
 
   const [overlayActive, setOverlayActive] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCamName, setNewCamName] = useState('');
   const [newCamLoc, setNewCamLoc] = useState('');
+  const [newCamModels, setNewCamModels] = useState<string[]>(['YOLOv8 Security Suite']);
   
   // Video selection state for adding a camera
   const [newCamVideoType, setNewCamVideoType] = useState<'preset' | 'local' | 'none'>('preset');
@@ -154,11 +155,11 @@ export default function CamerasPage() {
   // Telemetry updates when zoom modal is open
   const zoomedCam = cameras.find(c => c.id === zoomedCamId);
   useEffect(() => {
-    if (!zoomedCamId || !zoomedCam || zoomedCam.status === 'offline') return;
+    const currentCam = cameras.find(c => c.id === zoomedCamId);
+    if (!zoomedCamId || !currentCam || currentCam.status === 'offline') return;
 
     setTelemetryLogs([
       `[${new Date().toLocaleTimeString()}] System: Camera connection established.`,
-      `[${new Date().toLocaleTimeString()}] AI Engine: YOLOv8 Security model active.`,
       `[${new Date().toLocaleTimeString()}] AI Engine: Processing stream at 1080p...`
     ]);
 
@@ -170,10 +171,24 @@ export default function CamerasPage() {
       });
     }, 1500);
 
-    const logDetections = ['PERSON', 'HELMET', 'NO-HELMET', 'SAFETY-VEST', 'FORKLIFT', 'ROBOTIC_ARM'];
     const logsInterval = setInterval(() => {
-      const randomDet = logDetections[Math.floor(Math.random() * logDetections.length)];
-      const conf = Math.round(85 + Math.random() * 14);
+      const allowedDetections: string[] = [];
+      if (currentCam.models.includes('YOLOv8 Security Suite')) {
+        allowedDetections.push('PERSON', 'FORKLIFT', 'ROBOTIC_ARM');
+      }
+      if (currentCam.models.includes('PPE Classifier ResNet')) {
+        allowedDetections.push('HELMET', 'NO-HELMET', 'SAFETY-VEST');
+      }
+      if (currentCam.models.includes('YOLOv5 Fire Detector')) {
+        allowedDetections.push('FIRE', 'SMOKE', 'NORMAL_TEMP');
+      }
+      
+      if (allowedDetections.length === 0) {
+        allowedDetections.push('IDLE (No Active Models)');
+      }
+
+      const randomDet = allowedDetections[Math.floor(Math.random() * allowedDetections.length)];
+      const conf = randomDet.startsWith('IDLE') ? 100 : Math.round(85 + Math.random() * 14);
       setTelemetryLogs(prev => [
         `[${new Date().toLocaleTimeString()}] Detect: ${randomDet} (${conf}%)`,
         ...prev.slice(0, 6)
@@ -193,8 +208,33 @@ export default function CamerasPage() {
         return {
           ...c,
           status: nextStatus,
-          model: nextStatus === 'online' ? (c.model === 'Không cấu hình' ? 'YOLOv8 Security Suite' : c.model) : 'Không cấu hình'
+          models: nextStatus === 'online' ? (c.models.length === 0 ? ['YOLOv8 Security Suite'] : c.models) : []
         };
+      }
+      return c;
+    }));
+  };
+
+  const handleDeleteCamera = (id: string) => {
+    const cam = cameras.find(c => c.id === id);
+    if (!cam) return;
+    const confirmDelete = window.confirm(`Bạn có chắc chắn muốn xóa camera "${cam.location} (${cam.name})" không?`);
+    if (confirmDelete) {
+      setCameras(prev => prev.filter(c => c.id !== id));
+      if (zoomedCamId === id) {
+        setZoomedCamId(null);
+      }
+    }
+  };
+
+  const handleModelToggle = (id: string, modelName: string) => {
+    setCameras(prev => prev.map(c => {
+      if (c.id === id) {
+        const hasModel = c.models.includes(modelName);
+        const nextModels = hasModel
+          ? c.models.filter(m => m !== modelName)
+          : [...c.models, modelName];
+        return { ...c, models: nextModels };
       }
       return c;
     }));
@@ -214,20 +254,25 @@ export default function CamerasPage() {
       videoUrl = URL.createObjectURL(newCamVideoFile);
     }
 
-    const newId = (cameras.length + 1).toString().padStart(2, '0');
+    const maxId = cameras.reduce((max, c) => {
+      const num = parseInt(c.id, 10);
+      return isNaN(num) ? max : Math.max(max, num);
+    }, 0);
+    const newId = (maxId + 1).toString().padStart(2, '0');
     const newCam: Camera = {
       id: newId,
       name: newCamName,
       location: newCamLoc,
       status: 'online',
-      ipAddress: `192.168.1.${100 + cameras.length + 1}`,
-      model: 'YOLOv8 Security Suite',
+      ipAddress: `192.168.1.${100 + maxId + 1}`,
+      models: newCamModels,
       videoUrl: videoUrl
     };
 
     setCameras([...cameras, newCam]);
     setNewCamName('');
     setNewCamLoc('');
+    setNewCamModels(['YOLOv8 Security Suite']);
     setNewCamVideoFile(null);
     setShowAddModal(false);
   };
@@ -266,6 +311,20 @@ export default function CamerasPage() {
             <div className={styles.streamContainer}>
               <span className={styles.badgeOverlay}>{cam.name}</span>
               
+              {/* Delete Button */}
+              <button
+                className={styles.deleteBtn}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteCamera(cam.id);
+                }}
+                title="Xóa camera"
+              >
+                <span className="material-symbols-outlined">
+                  delete
+                </span>
+              </button>
+
               {/* Power Control Button */}
               <button
                 className={styles.powerBtn}
@@ -331,7 +390,18 @@ export default function CamerasPage() {
             <div className={styles.cardFooter}>
               <div>
                 <div className={styles.camName}>{cam.location}</div>
-                <div className={styles.camLocation}>{cam.ipAddress} • {cam.model}</div>
+                <div className={styles.camLocation}>{cam.ipAddress}</div>
+                <div className={styles.camModelsContainer}>
+                  {cam.models && cam.models.length > 0 ? (
+                    cam.models.map((m) => (
+                      <span key={m} className={styles.modelBadge}>
+                        {m.split(' ')[0]}
+                      </span>
+                    ))
+                  ) : (
+                    <span className={styles.modelBadgeNone}>Không giám sát</span>
+                  )}
+                </div>
               </div>
               
               <div className={styles.statusIndicator}>
@@ -368,6 +438,16 @@ export default function CamerasPage() {
                     {zoomedCam.status === 'online' ? 'power' : 'power_off'}
                   </span>
                   <span>{zoomedCam.status === 'online' ? 'Hoạt động' : 'Ngoại tuyến'}</span>
+                </button>
+                <button
+                  className={styles.zoomDeleteBtn}
+                  onClick={() => handleDeleteCamera(zoomedCam.id)}
+                  title="Xóa camera"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
+                    delete
+                  </span>
+                  <span>Xóa</span>
                 </button>
                 <button className={styles.zoomCloseBtn} onClick={() => setZoomedCamId(null)}>
                   <span className="material-symbols-outlined">close</span>
@@ -454,13 +534,32 @@ export default function CamerasPage() {
                     </div>
 
                     <div className={styles.modelMeta}>
-                      <div className={styles.metaRow}>
-                        <span className={styles.metaLabel}>Cấu hình Model:</span>
-                        <span className={styles.metaValue}>{zoomedCam.model}</span>
+                      <span className={styles.metaLabel} style={{ fontWeight: 600, marginBottom: '6px', display: 'block' }}>Cấu hình AI Models:</span>
+                      <div className={styles.modelsChecklist}>
+                        {[
+                          'YOLOv8 Security Suite',
+                          'YOLOv5 Fire Detector',
+                          'PPE Classifier ResNet'
+                        ].map((mName) => {
+                          const isChecked = zoomedCam.models.includes(mName);
+                          return (
+                            <label key={mName} className={styles.modelCheckboxLabel}>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => handleModelToggle(zoomedCam.id, mName)}
+                                className={styles.modelCheckbox}
+                              />
+                              <span className={styles.modelCheckboxText}>{mName}</span>
+                            </label>
+                          );
+                        })}
                       </div>
-                      <div className={styles.metaRow}>
+                      <div className={styles.metaRow} style={{ marginTop: '12px' }}>
                         <span className={styles.metaLabel}>Trạng thái AI:</span>
-                        <span className={styles.metaValue} style={{ color: 'var(--color-success)', fontWeight: 'bold' }}>Đang giám sát</span>
+                        <span className={styles.metaValue} style={{ color: zoomedCam.models.length === 0 ? 'var(--outline)' : 'var(--color-success)', fontWeight: 'bold' }}>
+                          {zoomedCam.models.length === 0 ? 'Tắt giám sát' : `Đang chạy ${zoomedCam.models.length} model`}
+                        </span>
                       </div>
                     </div>
                   </>
@@ -517,6 +616,34 @@ export default function CamerasPage() {
                     required
                     style={{ paddingLeft: '12px' }}
                   />
+                </div>
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Cấu hình Models AI</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                  {[
+                    'YOLOv8 Security Suite',
+                    'YOLOv5 Fire Detector',
+                    'PPE Classifier ResNet'
+                  ].map((mName) => {
+                    const isChecked = newCamModels.includes(mName);
+                    return (
+                      <label key={mName} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', userSelect: 'none' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            setNewCamModels(prev =>
+                              prev.includes(mName) ? prev.filter(x => x !== mName) : [...prev, mName]
+                            );
+                          }}
+                          style={{ cursor: 'pointer', accentColor: 'var(--primary)', width: '14px', height: '14px' }}
+                        />
+                        {mName}
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 
