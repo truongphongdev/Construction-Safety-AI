@@ -4,6 +4,7 @@ Tách biệt hoàn toàn khỏi FastAPI để dễ test độc lập.
 """
 
 from pathlib import Path
+import threading
 
 import numpy as np
 from ultralytics import YOLO
@@ -50,6 +51,7 @@ class YOLODetector:
         self.conf = conf
         self.iou = iou
         self.device = device
+        self._lock = threading.Lock()
 
     def predict(self, image: np.ndarray) -> list:
         """
@@ -61,22 +63,24 @@ class YOLODetector:
         Returns:
             List ultralytics Results objects.
         """
-        results = self.model.predict(
-            source=image,
-            conf=self.conf,
-            iou=self.iou,
-            device=self.device,
-            verbose=False,
-        )
+        with self._lock:
+            results = self.model.predict(
+                source=image,
+                conf=self.conf,
+                iou=self.iou,
+                device=self.device,
+                verbose=False,
+            )
         return results
 
     def predict_batch(self, images: list[np.ndarray]) -> list:
         """Chạy inference trên nhiều ảnh cùng lúc (batch)."""
-        results = self.model.predict(
-            source=images,
-            conf=self.conf,
-            iou=self.iou,
-            device=self.device,
-            verbose=False,
-        )
+        with self._lock:
+            results = self.model.predict(
+                source=images,
+                conf=self.conf,
+                iou=self.iou,
+                device=self.device,
+                verbose=False,
+            )
         return results

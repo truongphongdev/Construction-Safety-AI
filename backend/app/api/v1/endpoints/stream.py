@@ -1,0 +1,244 @@
+import time
+import json
+import asyncio
+import logging
+import base64
+import cv2
+import numpy as np
+from typing import List, Set
+from pathlib import Path
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, File, UploadFile
+from fastapi.responses import StreamingResponse
+
+from app.config import BASE_DIR
+from workers.camera_worker import get_latest_mjpeg_frame
+from workers.worker_manager import global_worker_manager
+from workers.event_consumer import register_ws_callback, global_event_consumer
+from app.ai.local_client import LocalPPEClient
+from analytics.ppe_checker import PPEChecker
+from analytics.zone_checker import ZoneChecker
+from app.core.event_bus import global_event_bus
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+VIDEO_DEMO_DIR = BASE_DIR.parent / "video_demo"
+
+# Thư viện lưu trữ các WebSocket clients đang lắng nghe WebSocket alerts
+connected_alert_clients: Set[WebSocket] = set()
+event_loop = None
+
+def broadcast_ws_alert(alert_data: dict):
+    """Callback được gọi từ EventConsumerThread khi có vi phạm mới."""
+    if not connected_alert_clients:
+        return
+
+    payload = json.dumps(alert_data)
+    # Lấy event loop chính của FastAPI để gửi message async
+    global event_loop
+    if event_loop and event_loop.is_running():
+        asyncio.run_coroutine_threadsafe(_send_to_all_clients(payload), event_loop)
+
+async def _send_to_all_clients(payload: str):
+    disconnected = set()
+    for ws in list(connected_alert_clients):
+        try:
+            await ws.send_text(payload)
+        except Exception:
+            disconnected.add(ws)
+
+    for ws in disconnected:
+        connected_alert_clients.discard(ws)
+
+# Đăng ký callback broadcast ngay khi load module
+register_ws_callback(broadcast_ws_alert)
+
+# Đảm bảo Event Consumer Thread chạy
+global_event_consumer.start()
+
+
+@router.get("/videos", summary="Danh sách video demo có sẵn")
+def list_videos():
+    """Liệt kê file video trong thư mục video_demo/."""
+    videos = []
+    if VIDEO_DEMO_DIR.exists():
+        for f in VIDEO_DEMO_DIR.iterdir():
+            if f.suffix.lower() in (".mp4", ".avi", ".mov", ".mkv"):
+                videos.append({"name": f.stem, "filename": f.name})
+    return {"videos": videos, "demo_dir": str(VIDEO_DEMO_DIR)}
+
+
+def mjpeg_frame_generator(camera_id: str, video_source: str = None):
+    """
+    Generator tạo luồng MJPEG HTTP stream cho camera_id.
+    Nếu worker chưa chạy, tự động khởi chạy CameraWorker.
+    """
+    # Đảm bảo worker cho camera này đã chạy
+    status_map = global_worker_manager.get_status()
+    if not status_map.get(camera_id, False):
+        # Chọn nguồn video (nếu truyền vào video_name hoặc lấy mặc định video_demo)
+        source = video_source
+        if not source:
+            demo_files = list(VIDEO_DEMO_DIR.glob("*.mp4")) if VIDEO_DEMO_DIR.exists() else []
+            source = str(demo_files[0]) if demo_files else "0"
+
+        global_worker_manager.start_worker(camera_id, source)
+
+    while True:
+        frame_bytes = get_latest_mjpeg_frame(camera_id)
+        if frame_bytes is not None:
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+            )
+        else:
+            time.sleep(0.05)
+
+        time.sleep(0.03)  # ~30 FPS output limit
+
+
+@router.get("/stream/{camera_id}", summary="MJPEG Video Stream cho camera")
+def get_mjpeg_stream(camera_id: str, video_name: str = None):
+    """
+    Endpoint trả về Server-Side MJPEG stream.
+    Trình duyệt chỉ cần dùng thẻ <img src="/stream/camera_id" /> để hiển thị trực tiếp.
+    """
+    source = None
+    if video_name:
+        video_path = VIDEO_DEMO_DIR / video_name
+        if video_path.exists():
+            source = str(video_path)
+
+    return StreamingResponse(
+        mjpeg_frame_generator(camera_id, video_source=source),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@router.websocket("/ws/alerts")
+async def websocket_alerts(websocket: WebSocket):
+    """
+    WebSocket endpoint chuyên biệt chỉ phục vụ gửi cảnh báo real-time tới Dashboard.
+    Client không cần gửi frame qua WebSocket nữa.
+    """
+    global event_loop
+    event_loop = asyncio.get_running_loop()
+
+    await websocket.accept()
+    connected_alert_clients.add(websocket)
+    logger.info(f"[WS Alerts] Client đã kết nối: {websocket.client}")
+
+    try:
+        while True:
+            # Giữ kết nối alive (ping/pong)
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        logger.info(f"[WS Alerts] Client đã ngắt kết nối: {websocket.client}")
+    finally:
+        connected_alert_clients.discard(websocket)
+
+
+webcam_ppe_checkers = {}
+webcam_zone_checkers = {}
+
+@router.post("/webcam/{camera_id}", summary="Nhận frame từ webcam máy tính và chạy AI")
+async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
+    """
+    Nhận frame JPEG từ webcam của client, chạy YOLOv8 Triton,
+    kiểm tra PPE + Zone, đẩy event vi phạm ra EventBus,
+    và trả về ảnh overlay base64 kèm danh sách objects.
+    """
+    img_bytes = await file.read()
+    nparr = np.frombuffer(img_bytes, np.uint8)
+    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if frame is None:
+        raise HTTPException(status_code=400, detail="Không thể decode ảnh.")
+
+    # Cấu hình / Lấy checkers
+    if camera_id not in webcam_ppe_checkers:
+        webcam_ppe_checkers[camera_id] = PPEChecker(cooldown_seconds=10.0)
+        webcam_zone_checkers[camera_id] = ZoneChecker(debounce_frames=2, cooldown_seconds=10.0)
+
+    ppe_checker = webcam_ppe_checkers[camera_id]
+    zone_checker = webcam_zone_checkers[camera_id]
+
+    # Nhận diện qua local client
+    local_client = LocalPPEClient()
+    detections = local_client.detect(frame)
+
+    # Đưa vào track list mô phỏng
+    tracks = []
+    for idx, det in enumerate(detections):
+        tracks.append({
+            "track_id": f"webcam-{idx}",
+            "bbox": det["bbox"],
+            "label": det["label"],
+            "confidence": det["confidence"]
+        })
+
+    # Phân tích vi phạm
+    ppe_events = ppe_checker.check(camera_id, tracks)
+    
+    # Tìm vùng cấm cho camera_id (nếu có)
+    from app.core.database import SessionLocal
+    from app.models.zone import ZoneModel
+    import uuid
+    db = SessionLocal()
+    zones = []
+    try:
+        cam_uuid = uuid.UUID(camera_id)
+        zones_db = db.query(ZoneModel).filter(ZoneModel.camera_id == cam_uuid, ZoneModel.is_active == True).all()
+        zones = [{"id": str(z.id), "name": z.name, "polygon_coords": z.polygon_coords, "severity": z.severity} for z in zones_db]
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+    zone_events = zone_checker.check(camera_id, tracks, zones)
+
+    # Đẩy các vi phạm mới vào event bus
+    for evt in ppe_events + zone_events:
+        evt["frame_jpg"] = frame.copy()
+        global_event_bus.publish(evt)
+
+    # Vẽ overlay lên hình ảnh để trả về
+    annotated = frame.copy()
+    for trk in tracks:
+        x1, y1, x2, y2 = [int(v) for v in trk["bbox"]]
+        lbl = trk["label"]
+        conf = trk["confidence"]
+        
+        color = (0, 255, 0) if lbl in ["helmet", "vest"] else (0, 0, 255)
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(
+            annotated,
+            f"{lbl} {conf:.2f}",
+            (x1, max(y1 - 10, 20)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            color,
+            2
+        )
+
+    # Convert annotated image back to base64
+    ret, jpeg_buf = cv2.imencode(".jpg", annotated)
+    base64_img = ""
+    if ret:
+        base64_img = f"data:image/jpeg;base64,{base64.b64encode(jpeg_buf).decode('utf-8')}"
+
+    return {
+        "annotated_image": base64_img,
+        "total_violations": len(ppe_events) + len(zone_events),
+        "detected_objects": [
+            {
+                "label": trk["label"],
+                "confidence": trk["confidence"],
+                "bbox": trk["bbox"],
+                "is_violation": trk["label"] in ["no_helmet", "no_vest"]
+            } for trk in tracks
+        ]
+    }

@@ -11,6 +11,7 @@ import {
   RegisterPage
 } from '@/pages';
 import useTheme from '@/hooks/useTheme';
+import { WebcamProvider } from '@/contexts/WebcamContext';
 import './App.css';
 
 function App() {
@@ -18,25 +19,27 @@ function App() {
   useTheme();
 
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Authentication layout wrapper */}
-        <Route element={<AuthLayout />}>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-        </Route>
+    <WebcamProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Authentication layout wrapper */}
+          <Route element={<AuthLayout />}>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+          </Route>
 
-        {/* Dashboard layout wrapper */}
-        <Route element={<MainLayout />}>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/cameras" element={<CamerasPage />} />
-          <Route path="/violations" element={<ViolationsPage />} />
-          <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/help" element={<HelpPage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+          {/* Dashboard layout wrapper */}
+          <Route element={<MainLayout />}>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/cameras" element={<CamerasPage />} />
+            <Route path="/violations" element={<ViolationsPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/help" element={<HelpPage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </WebcamProvider>
   );
 }
 

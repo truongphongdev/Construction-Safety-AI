@@ -61,3 +61,17 @@ class CameraService:
             self.db.commit()
             return True
         return False
+
+    def create_camera_with_id(self, obj_in: CameraCreate, camera_id: UUID) -> CameraModel:
+        """Tạo thiết bị camera mới với ID chỉ định."""
+        db_camera = CameraModel(
+            id=camera_id,
+            name=obj_in.name,
+            location_desc=obj_in.location_desc,
+            ip_address=obj_in.ip_address,
+            status=obj_in.status.value if hasattr(obj_in.status, 'value') else obj_in.status,
+        )
+        self.db.add(db_camera)
+        self.db.commit()
+        self.db.refresh(db_camera)
+        return db_camera

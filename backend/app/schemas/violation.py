@@ -2,7 +2,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
+from app.storage.minio_client import minio_storage
 
 
 class ViolationSeverity(str, Enum):
@@ -72,6 +73,13 @@ class ViolationOut(ViolationBase):
     deleted_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("image_path", mode="before")
+    @classmethod
+    def generate_presigned_url(cls, v: str | None) -> str | None:
+        if v and not v.startswith("http") and not v.startswith("/static/"):
+            return minio_storage.get_presigned_url(v)
+        return v
 
 
 class ViolationList(BaseModel):

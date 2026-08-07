@@ -1,7 +1,28 @@
+import hashlib
+import secrets
 from uuid import UUID
 from sqlalchemy.orm import Session
 from app.models.user import UserModel
 from app.schemas.user import UserCreate, UserUpdate
+
+
+def hash_password(password: str) -> str:
+    """Mã hóa mật khẩu bằng thuật toán PBKDF2-HMAC-SHA256 với salt ngẫu nhiên 16 bytes."""
+    salt = secrets.token_hex(16)
+    pw_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
+    return f"pbkdf2_sha256${salt}${pw_hash}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """Xác thực mật khẩu với hash đã lưu."""
+    if not stored_hash or "$" not in stored_hash:
+        return False
+    parts = stored_hash.split("$")
+    if len(parts) != 3:
+        return False
+    _, salt, pw_hash = parts
+    computed = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
+    return secrets.compare_digest(computed, pw_hash)
 
 
 class UserService:
@@ -24,9 +45,8 @@ class UserService:
         return items, total
 
     def create_user(self, obj_in: UserCreate) -> UserModel:
-        """Tạo người dùng mới."""
-        # Stub password hashing - Thực tế sẽ dùng thư viện mã hóa bcrypt/passlib
-        password_hash = f"hashed_{obj_in.password}"
+        """Tạo người dùng mới với mật khẩu đã mã hóa."""
+        password_hash = hash_password(obj_in.password)
         
         db_user = UserModel(
             username=obj_in.username,
@@ -48,7 +68,7 @@ class UserService:
 
         update_data = obj_in.model_dump(exclude_unset=True)
         if "password" in update_data:
-            update_data["password_hash"] = f"hashed_{update_data.pop('password')}"
+            update_data["password_hash"] = hash_password(update_data.pop("password"))
 
         for field, value in update_data.items():
             setattr(db_user, field, value)

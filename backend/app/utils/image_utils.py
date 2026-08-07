@@ -25,6 +25,24 @@ def bytes_to_numpy(image_bytes: bytes) -> np.ndarray:
     return cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
 
 
+def numpy_to_bytes(image: np.ndarray, format: str = ".jpg") -> bytes:
+    """
+    Chuyển numpy array BGR (OpenCV format) → raw image bytes (JPEG/PNG).
+
+    Args:
+        image: Ảnh dạng np.ndarray (BGR).
+        format: Định dạng nén (".jpg" hoặc ".png").
+
+    Returns:
+        bytes: Raw image bytes.
+    """
+    success, encoded_img = cv2.imencode(format, image)
+    if not success:
+        raise ValueError(f"Không thể encode ảnh sang định dạng {format}")
+    return encoded_img.tobytes()
+
+
+
 def resize_keep_aspect(
     image: np.ndarray,
     max_size: int = 1280,

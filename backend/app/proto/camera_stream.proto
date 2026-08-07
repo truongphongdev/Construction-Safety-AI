@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package construction_safety;
+
+// Request chứa thông tin frame gửi từ Camera/Video Ingest
+message FrameRequest {
+  string camera_id = 1;
+  int64 timestamp = 2;
+  bytes image_bytes = 3;        // Raw image binary (JPEG/PNG)
+  string image_format = 4;       // "jpeg", "png", "webp"
+  int32 frame_id = 5;
+}
+
+// Bounding box thông tin vị trí đối tượng phát hiện
+message BoundingBoxProto {
+  float xmin = 1;
+  float ymin = 2;
+  float xmax = 3;
+  float ymax = 4;
+}
+
+// Đối tượng phát hiện được (người, mũ bảo hộ, áo phản quang, vi phạm...)
+message DetectedObjectProto {
+  string label = 1;
+  float confidence = 2;
+  BoundingBoxProto bbox = 3;
+  bool is_violation = 4;
+}
+
+// Response trả về chứa thông tin nhận diện + ảnh render (nếu có)
+message StreamFrameResponse {
+  string camera_id = 1;
+  int64 timestamp = 2;
+  int32 frame_id = 3;
+  repeated DetectedObjectProto detected_objects = 4;
+  int32 total_violations = 5;
+  float inference_time_ms = 6;
+  bytes annotated_image_bytes = 7; // Ảnh đã vẽ Bounding Box
+}
+
+service CameraStreamService {
+  // Client Streaming: Camera gửi stream các frame ảnh -> Server nhận & phân tích
+  rpc UploadCameraStream (stream FrameRequest) returns (StreamFrameResponse);
+
+  // Bidirectional Streaming: Camera stream frame liên tục -> Server phân tích và stream lại kết quả tức thì
+  rpc LiveCameraInference (stream FrameRequest) returns (stream StreamFrameResponse);
+
+  // Unary RPC: Gửi 1 frame ảnh lẻ -> Nhận kết quả phân tích
+  rpc DetectSingleFrame (FrameRequest) returns (StreamFrameResponse);
+}

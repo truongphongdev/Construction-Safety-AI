@@ -7,40 +7,40 @@
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   
   /* Precision Lens - Light Theme Default */
-  --bg-color: #f8f9fa;
+  --bg-color: #f3f4f6;
   --surface-lowest: #ffffff;
-  --surface-low: #f3f4f5;
-  --surface: #f8f9fa;
-  --surface-container: #edeeef;
-  --surface-high: #e7e8e9;
-  --surface-highest: #e1e3e4;
+  --surface-low: #f9fafb;
+  --surface: #f3f4f6;
+  --surface-container: #e5e7eb;
+  --surface-high: #d1d5db;
+  --surface-highest: #9ca3af;
   
-  --on-surface: #191c1d;
-  --on-surface-variant: #434655;
-  --inverse-surface: #2e3132;
-  --inverse-on-surface: #f0f1f2;
+  --on-surface: #111827;
+  --on-surface-variant: #4b5563;
+  --inverse-surface: #1f2937;
+  --inverse-on-surface: #f9fafb;
   
-  --primary: #004ac6;
+  --primary: #2563eb;
   --on-primary: #ffffff;
-  --primary-container: #2563eb;
-  --on-primary-container: #eeefff;
+  --primary-container: #3b82f6;
+  --on-primary-container: #eff6ff;
   
-  --secondary: #495c95;
+  --secondary: #4b5563;
   --on-secondary: #ffffff;
-  --secondary-container: #acbfff;
-  --on-secondary-container: #394c84;
+  --secondary-container: #e5e7eb;
+  --on-secondary-container: #1f2937;
   
-  --tertiary: #943700;
+  --tertiary: #c2410c;
   --on-tertiary: #ffffff;
-  --tertiary-container: #bc4800;
+  --tertiary-container: #ea580c;
   
-  --error: #ba1a1a;
+  --error: #dc2626;
   --on-error: #ffffff;
-  --error-container: #ffdad6;
-  --on-error-container: #93000a;
+  --error-container: #fee2e2;
+  --on-error-container: #7f1d1d;
   
-  --outline: #737686;
-  --outline-variant: #c3c6d7;
+  --outline: #9ca3af;
+  --outline-variant: #e5e7eb;
   
   /* Status Colors */
   --color-success: #16a34a;
@@ -71,12 +71,12 @@
   --shadow-lg: 0px 10px 15px -3px rgba(0, 0, 0, 0.05), 0px 4px 6px -2px rgba(0, 0, 0, 0.02);
   
   /* Glassmorphism defaults (disabled/opaque for light theme) */
-  --glass-bg: #ffffff;
-  --glass-border: 1px solid var(--outline-variant);
-  --glass-blur: 0px;
-  --glass-shadow: var(--shadow-sm);
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: 1px solid rgba(0, 0, 0, 0.08);
+  --glass-blur: 12px;
+  --glass-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.04);
   
-  --glow-color: rgba(37, 99, 235, 0);
+  --glow-color: rgba(37, 99, 235, 0.02);
 }
 
 [data-theme='dark'] {

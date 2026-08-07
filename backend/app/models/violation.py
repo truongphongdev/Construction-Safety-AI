@@ -30,8 +30,10 @@ class ViolationModel(Base):
         server_default=text("'MEDIUM'"),
     )
     worker_code = Column(String(50), nullable=True)
-    video_bucket = Column(String(50), nullable=False)
-    video_path = Column(String(255), nullable=False)
+    track_id = Column(String(50), nullable=True)
+    evidence_key = Column(String(255), nullable=True)
+    video_bucket = Column(String(50), nullable=True)
+    video_path = Column(String(255), nullable=True)
     image_path = Column(String(255), nullable=True)
     status = Column(
         String(20),

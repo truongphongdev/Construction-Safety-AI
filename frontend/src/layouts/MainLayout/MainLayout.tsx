@@ -2,6 +2,7 @@ import { NavLink, Link, useNavigate, useLocation, Outlet } from 'react-router-do
 import { useState, useEffect, useRef } from 'react';
 import useTheme from '@/hooks/useTheme';
 import styles from './MainLayout.module.css';
+import { mapViolationType } from '@/utils/translation';
 
 interface NotificationItem {
   id: string;
@@ -18,44 +19,50 @@ export default function MainLayout() {
   const { theme, toggleTheme } = useTheme();
   const [emergencyAlertActive, setEmergencyAlertActive] = useState(false);
   
-  const [notifications, setNotifications] = useState<NotificationItem[]>([
-    {
-      id: '1',
-      type: 'danger',
-      title: 'Phát hiện xâm nhập',
-      message: 'Khu vực cổng A (Camera 03) phát hiện chuyển động bất thường.',
-      time: '2 phút trước',
-      read: false,
-    },
-    {
-      id: '2',
-      type: 'warning',
-      title: 'Mất kết nối Camera',
-      message: 'Camera hành lang phía Nam (Camera 05) mất kết nối mạng.',
-      time: '15 phút trước',
-      read: false,
-    },
-    {
-      id: '3',
-      type: 'success',
-      title: 'Cập nhật Model AI',
-      message: 'Phiên bản YOLOv8 Security Suite đã được nâng cấp lên v2.4.0 thành công.',
-      time: '1 giờ trước',
-      read: true,
-    },
-    {
-      id: '4',
-      type: 'info',
-      title: 'Sao lưu hệ thống',
-      message: 'Bản sao lưu tự động hàng tuần đã hoàn thành.',
-      time: '3 giờ trước',
-      read: true,
-    },
-  ]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [toasts, setToasts] = useState<any[]>([]);
 
   const notificationsRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Custom event listener for safety violations
+  useEffect(() => {
+    const handleViolation = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      
+      // 1. Add to header notifications
+      setNotifications(prev => [
+        {
+          id: detail.id || String(Date.now()),
+          type: 'danger',
+          title: '🚨 Phát hiện Vi phạm!',
+          message: `${detail.camera_id}: phát hiện ${mapViolationType(detail.type)} (${(detail.confidence * 100).toFixed(0)}%)`,
+          time: detail.timestamp,
+          read: false
+        },
+        ...prev
+      ]);
+      
+      // 2. Add to active toasts
+      const newToast = {
+        id: detail.id || String(Date.now()),
+        camera_id: detail.camera_id,
+        type: detail.type,
+        confidence: detail.confidence,
+        timestamp: detail.timestamp
+      };
+      
+      setToasts(prev => [...prev, newToast]);
+      
+      // Auto-dismiss toast after 5 seconds
+      setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== newToast.id));
+      }, 5000);
+    };
+    
+    window.addEventListener('violation-detected', handleViolation);
+    return () => window.removeEventListener('violation-detected', handleViolation);
+  }, []);
 
   // Close notifications dropdown when clicking outside
   useEffect(() => {
@@ -70,47 +77,23 @@ export default function MainLayout() {
     };
   }, []);
 
-  // Keyboard shortcut listener to focus search input
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (
-        event.key === '/' && 
-        document.activeElement !== searchInputRef.current && 
-        document.activeElement?.tagName !== 'INPUT' && 
-        document.activeElement?.tagName !== 'TEXTAREA'
-      ) {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-      } else if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-      } else if (event.key === 'Escape' && document.activeElement === searchInputRef.current) {
-        searchInputRef.current?.blur();
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, []);
+
 
   // Determine current page title
-  const getPageTitle = (pathname: string) => {
-    switch (pathname) {
+  const getPageTitle = (path: string) => {
+    switch (path) {
       case '/':
-        return 'Dashboard Overview';
+        return 'Tổng quan giám sát';
       case '/cameras':
-        return 'CCTV Camera Management';
-      case '/models':
-        return 'AI Model Configuration';
+        return 'Quản lý Camera giám sát';
       case '/violations':
-        return 'Safety Violations Log';
+        return 'Nhật ký vi phạm an toàn';
       case '/reports':
-        return 'Analytics & Compliance Reports';
+        return 'Báo cáo & Thống kê tuân thủ';
       case '/settings':
-        return 'System Settings';
+        return 'Cấu hình hệ thống';
       case '/help':
-        return 'Help & Documentation';
+        return 'Trợ giúp & Tài liệu';
       default:
         return 'VisionGuard AI';
     }
@@ -135,16 +118,6 @@ export default function MainLayout() {
         </div>
         
         <div className={styles.headerRight}>
-          {/* Search bar */}
-          <div className={styles.searchWrapper}>
-            <span className={`material-symbols-outlined ${styles.searchIcon}`}>search</span>
-            <input 
-              ref={searchInputRef}
-              type="text" 
-              placeholder="Tìm kiếm..." 
-              className={styles.searchInput}
-            />
-          </div>
 
           {/* Theme Toggle */}
           <button 
@@ -227,7 +200,7 @@ export default function MainLayout() {
           <Link to="/" style={{ textDecoration: 'none' }}>
             <h1 className={styles.logoText}>VisionGuard AI</h1>
           </Link>
-          <p className={styles.logoSubText}>🔴 Command Monitoring Active</p>
+          <p className={styles.logoSubText}>🔴 Đang giám sát an toàn</p>
         </div>
 
         <ul className={styles.navLinksList}>
@@ -237,7 +210,7 @@ export default function MainLayout() {
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.navItemActive : ''}`}
             >
               <span className="material-symbols-outlined">dashboard</span>
-              <span>Dashboard</span>
+              <span>Tổng quan</span>
             </NavLink>
           </li>
           <li>
@@ -246,7 +219,7 @@ export default function MainLayout() {
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.navItemActive : ''}`}
             >
               <span className="material-symbols-outlined">videocam</span>
-              <span>Cameras</span>
+              <span>Camera giám sát</span>
             </NavLink>
           </li>
 
@@ -256,7 +229,7 @@ export default function MainLayout() {
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.navItemActive : ''}`}
             >
               <span className="material-symbols-outlined">warning</span>
-              <span>Violations</span>
+              <span>Nhật ký vi phạm</span>
             </NavLink>
           </li>
           <li>
@@ -265,7 +238,7 @@ export default function MainLayout() {
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.navItemActive : ''}`}
             >
               <span className="material-symbols-outlined">assessment</span>
-              <span>Reports</span>
+              <span>Báo cáo thống kê</span>
             </NavLink>
           </li>
           <li>
@@ -274,7 +247,7 @@ export default function MainLayout() {
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.navItemActive : ''}`}
             >
               <span className="material-symbols-outlined">settings</span>
-              <span>Settings</span>
+              <span>Cấu hình hệ thống</span>
             </NavLink>
           </li>
         </ul>
@@ -286,18 +259,18 @@ export default function MainLayout() {
           style={{ opacity: emergencyAlertActive ? 0.7 : 1 }}
         >
           <span className="material-symbols-outlined">emergency</span>
-          <span>Emergency Alert</span>
+          <span>Cảnh báo khẩn cấp</span>
         </button>
 
         {/* Sidebar Footer Link list */}
         <div className={styles.sidebarFooter}>
           <NavLink to="/help" className={styles.sidebarFooterItem}>
             <span className="material-symbols-outlined">help</span>
-            <span>Help Center</span>
+            <span>Trợ giúp</span>
           </NavLink>
           <Link to="/login" className={styles.sidebarFooterItem}>
             <span className="material-symbols-outlined">logout</span>
-            <span>Logout</span>
+            <span>Đăng xuất</span>
           </Link>
         </div>
       </nav>
@@ -313,21 +286,47 @@ export default function MainLayout() {
       <nav className={styles.mobileNav}>
         <NavLink to="/" className={({ isActive }) => `${styles.mobileNavItem} ${isActive ? styles.mobileNavItemActive : ''}`}>
           <span className="material-symbols-outlined">dashboard</span>
-          <span>Dashboard</span>
+          <span>Tổng quan</span>
         </NavLink>
         <NavLink to="/cameras" className={({ isActive }) => `${styles.mobileNavItem} ${isActive ? styles.mobileNavItemActive : ''}`}>
           <span className="material-symbols-outlined">videocam</span>
-          <span>Cameras</span>
+          <span>Camera</span>
         </NavLink>
         <NavLink to="/violations" className={({ isActive }) => `${styles.mobileNavItem} ${isActive ? styles.mobileNavItemActive : ''}`}>
           <span className="material-symbols-outlined">warning</span>
-          <span>Violations</span>
+          <span>Vi phạm</span>
         </NavLink>
         <NavLink to="/settings" className={({ isActive }) => `${styles.mobileNavItem} ${isActive ? styles.mobileNavItemActive : ''}`}>
           <span className="material-symbols-outlined">settings</span>
-          <span>Settings</span>
+          <span>Cài đặt</span>
         </NavLink>
       </nav>
+      {/* Toast notifications container */}
+      <div style={{
+        position: 'fixed', top: '70px', right: '20px', zIndex: 9999,
+        display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '360px', width: '100%'
+      }}>
+        {toasts.map(toast => (
+          <div key={toast.id} style={{
+            background: 'rgba(239, 68, 68, 0.95)', backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px',
+            padding: '16px', color: '#fff', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.5)',
+            display: 'flex', flexDirection: 'column', gap: '4px',
+            animation: `${styles.slideIn} 0.3s cubic-bezier(0.16, 1, 0.3, 1)`
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>warning</span>
+                CẢNH BÁO VI PHẠM!
+              </strong>
+              <span style={{ fontSize: '10px', opacity: 0.8 }}>{toast.timestamp}</span>
+            </div>
+            <div style={{ fontSize: '12px', marginTop: '4px', lineHeight: '1.4' }}>
+              <strong>{toast.camera_id}</strong>: Phát hiện <strong>{mapViolationType(toast.type)}</strong> với độ tin cậy <strong>{(toast.confidence * 100).toFixed(0)}%</strong>.
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

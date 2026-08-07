@@ -1,264 +1,313 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './DashboardPage.module.css';
+import { fetchViolations, fetchCameras, checkHealth } from '../../services';
+import type { Violation } from '../../services';
+import { mapViolationType } from '@/utils/translation';
+import { useWebcam } from '@/contexts/WebcamContext';
 
-interface AlertLog {
-  id: string;
-  type: 'danger' | 'warning' | 'info';
-  title: string;
-  camera: string;
-  time: string;
-}
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  
-  const [metrics] = useState({
-    activeCams: '12 / 12',
-    activeModel: 'YOLOv8 Suite',
-    activeAlerts: '6 Active',
-    systemHealth: '98.5%'
+  const { isWebcamActive, webcamFrame, startWebcam, stopWebcam } = useWebcam();
+
+  const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
+  const [selectedViolationImage, setSelectedViolationImage] = useState<string | null>(null);
+
+  const [metrics, setMetrics] = useState({
+    activeCams: '—',
+    activeModel: 'YOLOv8 best.pt (PPE 5-class)',
+    activeAlerts: '0',
+    systemHealth: 'Đang kiểm tra...'
   });
 
-  const [alerts] = useState<AlertLog[]>([
-    { id: '1', type: 'danger', title: 'Không đội mũ bảo hộ (No Helmet)', camera: 'Cam 03 - Kho hàng B', time: '10 giây trước' },
-    { id: '2', type: 'warning', title: 'Xâm nhập vùng nguy hiểm (Intruder)', camera: 'Cam 08 - Trạm điện', time: '2 phút trước' },
-    { id: '3', type: 'info', title: 'Thiết bị bảo hộ đầy đủ', camera: 'Cam 01 - Cổng chính', time: '5 phút trước' },
-    { id: '4', type: 'danger', title: 'Không mặc áo phản quang', camera: 'Cam 04 - Xưởng đóng gói', time: '15 phút trước' },
-    { id: '5', type: 'info', title: 'Đã cập nhật cấu hình model', camera: 'Hệ thống', time: '1 giờ trước' }
-  ]);
+  const [recentViolations, setRecentViolations] = useState<Violation[]>([]);
 
-  // Real-time canvas CCTV simulation
+  // Poll backend health + violations every 10s
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    let mounted = true;
+    let lastSeenViolationId = '';
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const poll = async () => {
+      const healthy = await checkHealth();
+      if (!mounted) return;
+      setIsBackendConnected(healthy);
 
-    let animationId: number;
-    let frame = 0;
-
-    // Simulation entities
-    const workers = [
-      { id: 1, x: 100, y: 150, dx: 1.2, dy: 0.5, helmet: true, name: 'Worker A' },
-      { id: 2, x: 400, y: 220, dx: -0.8, dy: 1.0, helmet: false, name: 'Worker B (No Helmet)' },
-      { id: 3, x: 250, y: 110, dx: 0.5, dy: -0.3, helmet: true, name: 'Worker C' }
-    ];
-
-    const render = () => {
-      frame++;
-      
-      // Clear canvas with CCTV green-dark background
-      ctx.fillStyle = '#090d16';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Draw grid lines
-      ctx.strokeStyle = 'rgba(37, 99, 235, 0.05)';
-      ctx.lineWidth = 1;
-      for (let i = 0; i < canvas.width; i += 40) {
-        ctx.beginPath();
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i, canvas.height);
-        ctx.stroke();
-      }
-      for (let j = 0; j < canvas.height; j += 40) {
-        ctx.beginPath();
-        ctx.moveTo(0, j);
-        ctx.lineTo(canvas.width, j);
-        ctx.stroke();
-      }
-
-      // Draw safe warehouse zone lines
-      ctx.strokeStyle = 'rgba(251, 191, 36, 0.3)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
-      ctx.strokeRect(50, 50, canvas.width - 100, canvas.height - 100);
-      ctx.setLineDash([]);
-
-      // Draw Safe Zone text labels
-      ctx.fillStyle = 'rgba(251, 191, 36, 0.5)';
-      ctx.font = '10px Inter';
-      ctx.fillText('SAFETY ZONE LIMIT', 60, 45);
-
-      // Update and draw workers
-      workers.forEach((worker) => {
-        // Move worker
-        worker.x += worker.dx;
-        worker.y += worker.dy;
-
-        // Bounce off walls
-        if (worker.x < 80 || worker.x > canvas.width - 120) worker.dx *= -1;
-        if (worker.y < 80 || worker.y > canvas.height - 120) worker.dy *= -1;
-
-        // Draw worker box
-        const boxWidth = 60;
-        const boxHeight = 120;
-        const color = worker.helmet ? '#16a34a' : '#ef4444'; // Green if safe, Red if violation
-
-        // Drawing bounding box
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(worker.x, worker.y, boxWidth, boxHeight);
-
-        // Drawing translucent overlay
-        ctx.fillStyle = worker.helmet ? 'rgba(22, 163, 74, 0.05)' : 'rgba(239, 68, 68, 0.08)';
-        ctx.fillRect(worker.x, worker.y, boxWidth, boxHeight);
-
-        // Draw bounding box title label background
-        ctx.fillStyle = color;
-        ctx.fillRect(worker.x, worker.y - 20, boxWidth, 20);
-
-        // Draw text info inside box title
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '10px Inter';
-        ctx.fillText(worker.helmet ? 'SAFE: 98%' : 'ALERT: 99%', worker.x + 4, worker.y - 6);
-
-        // Draw Helmet overlay icon on worker head
-        ctx.fillStyle = worker.helmet ? '#16a34a' : '#ef4444';
-        ctx.beginPath();
-        ctx.arc(worker.x + boxWidth / 2, worker.y + 15, 8, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Draw worker text description underneath
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-        ctx.font = '10px Inter';
-        ctx.fillText(worker.name, worker.x, worker.y + boxHeight + 14);
+      const apiCams = await fetchCameras();
+      const camMap: Record<string, string> = {};
+      apiCams.forEach(c => {
+        if (c.id && c.name) camMap[c.id] = c.name;
       });
 
-      // Draw flashing alert bar if there is a violation
-      const hasViolation = workers.some(w => !w.helmet);
-      if (hasViolation && Math.floor(frame / 20) % 2 === 0) {
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(0, 0, canvas.width, canvas.height);
-
-        ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 12px Inter';
-        ctx.fillText('🔴 VIOLATION DETECTED: PPE COMPLIANCE FAILURE', 20, canvas.height - 20);
+      // Xác định trạng thái hệ thống
+      let systemStatus = 'Backend chưa kết nối';
+      if (healthy) {
+        systemStatus = 'Online — Backend Active';
       }
 
-      // Draw camera overlay details
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 10px Courier New';
-      const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-      ctx.fillText(`REC LIVE  ${timestamp}  CAM 03`, 20, 30);
+      setMetrics(m => ({
+        ...m,
+        systemHealth: systemStatus,
+        activeCams: healthy ? `${apiCams.length}` : '—',
+      }));
 
-      animationId = requestAnimationFrame(render);
+      const vios = await fetchViolations(camMap);
+      if (mounted) {
+        setRecentViolations(vios);
+        setMetrics(m => ({ ...m, activeAlerts: String(vios.length) }));
+
+        // Kích hoạt chuông 🔔 & Toast notification nếu phát hiện vi phạm mới
+        if (vios.length > 0 && vios[0].id !== lastSeenViolationId) {
+          const newest = vios[0];
+          if (lastSeenViolationId !== '') {
+            window.dispatchEvent(new CustomEvent('violation-detected', {
+              detail: {
+                id: newest.id,
+                camera_id: newest.camera_id,
+                type: newest.type,
+                confidence: 0.92,
+                timestamp: newest.timestamp
+              }
+            }));
+          }
+          lastSeenViolationId = newest.id;
+        }
+      }
     };
 
-    render();
-
-    return () => {
-      cancelAnimationFrame(animationId);
-    };
+    poll();
+    const timer = setInterval(poll, 10_000);
+    return () => { mounted = false; clearInterval(timer); };
   }, []);
 
   return (
     <div>
-      {/* Metrics Row */}
+      {/* ── Metrics Row ─────────────────────────────────────────────────── */}
       <div className={styles.metricsGrid}>
         <div className={`${styles.metricCard} glass-panel`}>
-          <div className={styles.metricIconWrapper} style={{ backgroundColor: 'var(--color-success-bg)', color: 'var(--color-success)' }}>
+          <div className={styles.metricIconWrapper} style={{ background: 'var(--color-success-bg)', color: 'var(--color-success)' }}>
             <span className="material-symbols-outlined">videocam</span>
           </div>
           <div>
-            <div className={styles.metricTitle}>Active Cameras</div>
+            <div className={styles.metricTitle}>Camera hoạt động</div>
             <div className={`${styles.metricValue} tabular-nums`}>{metrics.activeCams}</div>
           </div>
         </div>
 
-        <div className={`${styles.metricCard} glass-panel`} style={{ cursor: 'pointer' }} onClick={() => navigate('/models')}>
-          <div className={styles.metricIconWrapper} style={{ backgroundColor: 'var(--primary-container)', color: 'var(--on-primary)' }}>
-            <span className="material-symbols-outlined icon-filled">psychology</span>
-          </div>
-          <div>
-            <div className={styles.metricTitle}>Connected Model</div>
-            <div className={styles.metricValue}>{metrics.activeModel}</div>
-          </div>
-        </div>
-
         <div className={`${styles.metricCard} glass-panel`} style={{ cursor: 'pointer' }} onClick={() => navigate('/violations')}>
-          <div className={styles.metricIconWrapper} style={{ backgroundColor: 'var(--color-danger-bg)', color: 'var(--color-danger)' }}>
+          <div className={styles.metricIconWrapper} style={{ background: 'var(--color-danger-bg)', color: 'var(--color-danger)' }}>
             <span className="material-symbols-outlined">warning</span>
           </div>
           <div>
-            <div className={styles.metricTitle}>Violations</div>
-            <div className={styles.metricValue}>{metrics.activeAlerts}</div>
+            <div className={styles.metricTitle}>Vi phạm ghi nhận</div>
+            <div className={styles.metricValue} style={{ color: Number(metrics.activeAlerts) > 0 ? 'var(--error)' : undefined }}>
+              {metrics.activeAlerts}
+            </div>
           </div>
         </div>
 
         <div className={`${styles.metricCard} glass-panel`}>
-          <div className={styles.metricIconWrapper} style={{ backgroundColor: 'var(--color-warning-bg)', color: 'var(--color-warning)' }}>
-            <span className="material-symbols-outlined">analytics</span>
+          <div className={styles.metricIconWrapper} style={{
+            background: isBackendConnected ? 'var(--color-success-bg)' : 'var(--color-warning-bg)',
+            color: isBackendConnected ? 'var(--color-success)' : 'var(--color-warning)'
+          }}>
+            <span className="material-symbols-outlined">cloud_sync</span>
           </div>
           <div>
-            <div className={styles.metricTitle}>System Health</div>
-            <div className={`${styles.metricValue} tabular-nums`}>{metrics.systemHealth}</div>
+            <div className={styles.metricTitle}>Hệ thống Backend</div>
+            <div className={styles.metricValue} style={{ fontSize: '13px', color: isBackendConnected ? 'var(--color-success)' : 'var(--color-warning)' }}>
+              {metrics.systemHealth}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Main Grid */}
+      {/* ── Main Grid: Violations Table + Test AI ───────────────────────── */}
       <div className={styles.mainGrid}>
-        {/* Live CCTV Video Monitor */}
-        <div className={`${styles.feedCard} glass-panel`}>
-          <div className={styles.cardHeader}>
-            <div className={styles.cardTitle}>
-              <span className={styles.statusDot}></span>
-              Live Feed Simulation (Kho Hàng B)
+        
+        {/* Left Side: Recent Violations (2fr) */}
+        <div className={`${styles.alertsCard} glass-panel`} style={{ padding: '24px' }}>
+          <div className={styles.cardHeader} style={{ marginBottom: '20px' }}>
+            <div className={styles.cardTitle} style={{ fontSize: '18px', gap: '10px' }}>
+              <span className="material-symbols-outlined text-primary" style={{ fontSize: '24px' }}>notifications_active</span>
+              Nhật ký vi phạm gần đây
             </div>
-            <button className="btn btn-outline" style={{ height: '32px', fontSize: '12px' }} onClick={() => navigate('/cameras')}>
-              Xem tất cả camera
+            <button
+              className="btn btn-outline"
+              style={{ height: '32px', fontSize: '13px' }}
+              onClick={() => navigate('/violations')}
+            >
+              Xem tất cả vi phạm
             </button>
           </div>
-          <div className={styles.canvasContainer}>
-            <div className={styles.feedInfo}>CAM-03: NORTH WAREHOUSE</div>
-            <div className={styles.feedOverlay}>AI MODEL: YOLOv8_SAFETY_SUITE</div>
-            <canvas 
-              ref={canvasRef} 
-              width={640} 
-              height={360} 
-              className={styles.videoCanvas}
-            />
-          </div>
+
+          {recentViolations.length > 0 ? (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}>
+                    <th style={{ padding: '12px 8px', fontWeight: 600 }}>Hình ảnh</th>
+                    <th style={{ padding: '12px 8px', fontWeight: 600 }}>Loại vi phạm</th>
+                    <th style={{ padding: '12px 8px', fontWeight: 600 }}>Camera</th>
+                    <th style={{ padding: '12px 8px', fontWeight: 600 }}>Thời gian</th>
+                    <th style={{ padding: '12px 8px', fontWeight: 600 }}>Mức độ</th>
+                    <th style={{ padding: '12px 8px', fontWeight: 600 }}>Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentViolations.slice(0, 6).map(v => (
+                    <tr key={v.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      <td style={{ padding: '10px 8px' }}>
+                        {v.image_url ? (
+                          <img 
+                            src={v.image_url.startsWith('http') ? v.image_url : `${API_BASE.replace('/api/v1', '')}${v.image_url}`} 
+                            alt={v.type}
+                            style={{ width: '56px', height: '32px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.1)' }}
+                            onClick={() => setSelectedViolationImage(v.image_url?.startsWith('http') ? v.image_url : `${API_BASE.replace('/api/v1', '')}${v.image_url}`)}
+                            title="Bấm để phóng to"
+                          />
+                        ) : (
+                          <div style={{ width: '56px', height: '32px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <span className="material-symbols-outlined" style={{ fontSize: '18px', opacity: 0.3 }}>image</span>
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--on-surface)' }}>
+                        {mapViolationType(v.type)}
+                      </td>
+                      <td style={{ padding: '10px 8px', color: 'var(--text-secondary)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span className="material-symbols-outlined" style={{ fontSize: '15px', color: 'var(--primary)' }}>videocam</span>
+                          {v.camera_id}
+                        </div>
+                      </td>
+                      <td style={{ padding: '10px 8px', color: 'var(--text-secondary)' }} className="tabular-nums">
+                        {v.timestamp}
+                      </td>
+                      <td style={{ padding: '10px 8px' }}>
+                        <span style={{
+                          padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600,
+                          background: v.severity === 'danger' ? 'rgba(239,68,68,0.15)' : v.severity === 'warning' ? 'rgba(245,158,11,0.15)' : 'rgba(59,130,246,0.15)',
+                          color: v.severity === 'danger' ? '#f87171' : v.severity === 'warning' ? '#fbbf24' : '#60a5fa'
+                        }}>
+                          {v.severity === 'danger' ? 'Nguy hiểm' : v.severity === 'warning' ? 'Cảnh báo' : 'Thông tin'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 8px' }}>
+                        <span style={{
+                          padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600,
+                          background: v.status === 'RESOLVED' ? 'rgba(22,163,74,0.15)' : 'rgba(245,158,11,0.15)',
+                          color: v.status === 'RESOLVED' ? '#4ade80' : '#fbbf24'
+                        }}>
+                          {v.status === 'RESOLVED' ? 'Đã xử lý' : 'Đang xử lý'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '48px', marginBottom: '12px', opacity: 0.3 }}>verified</span>
+              <div>Chưa phát hiện vi phạm an toàn lao động nào</div>
+            </div>
+          )}
         </div>
 
-        {/* Recent Violations Panel */}
-        <div className={`${styles.alertsCard} glass-panel`}>
-          <div className={styles.cardHeader}>
-            <div className={styles.cardTitle}>
-              <span className="material-symbols-outlined text-primary">notifications_active</span>
-              Recent Violations
+        {/* Right Side: Webcam AI Live panel (1fr) */}
+        <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <h3 style={{ margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '18px', color: 'var(--on-surface)' }}>
+            <span className="material-symbols-outlined text-primary" style={{ fontSize: '24px' }}>videocam</span>
+            Webcam AI Live
+          </h3>
+          <p style={{ margin: '0 0 16px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+            Luồng trực tiếp từ webcam, nhận diện bảo hộ lao động qua YOLOv8.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
+            <div>
+              <button 
+                className="btn btn-primary" 
+                onClick={isWebcamActive ? stopWebcam : startWebcam}
+                style={{ 
+                  padding: '8px 16px', fontSize: '13px', width: '100%',
+                  background: isWebcamActive ? 'var(--error)' : 'var(--primary)',
+                }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '18px', marginRight: '6px', verticalAlign: 'middle' }}>
+                  {isWebcamActive ? 'videocam_off' : 'videocam'}
+                </span>
+                {isWebcamActive ? 'Tắt Webcam' : 'Bật Webcam'}
+              </button>
+            </div>
+
+            {/* Preview image */}
+            <div style={{
+              position: 'relative', background: 'var(--surface-low)', borderRadius: '8px',
+              minHeight: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+              border: '1px solid var(--outline-variant)', flex: 1
+            }}>
+              {isWebcamActive ? (
+                <>
+                  {webcamFrame ? (
+                    <img src={webcamFrame} alt="Webcam Live" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+                  ) : (
+                    <div style={{ color: 'var(--on-surface-variant)', fontSize: '12px', textAlign: 'center', padding: '20px' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '32px', display: 'block', marginBottom: '6px', opacity: 0.3, animation: 'pulse 1.5s infinite' }}>memory</span>
+                      Đang khởi tạo AI & Webcam...
+                    </div>
+                  )}
+                  <div style={{
+                    position: 'absolute', bottom: '8px', left: '8px',
+                    background: 'rgba(34,197,94,0.85)', backdropFilter: 'blur(4px)',
+                    borderRadius: '6px', padding: '4px 10px',
+                    fontSize: '11px', fontWeight: 600, color: '#fff', zIndex: 3,
+                    display: 'flex', alignItems: 'center', gap: '6px'
+                  }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fff', animation: 'pulse 1.5s infinite' }} />
+                    WEBCAM AI LIVE
+                  </div>
+                </>
+              ) : (
+                <div style={{ color: 'var(--on-surface-variant)', fontSize: '12px', textAlign: 'center', padding: '20px' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: '32px', display: 'block', marginBottom: '6px', opacity: 0.3 }}>videocam_off</span>
+                  Webcam đang tắt
+                </div>
+              )}
             </div>
           </div>
-          <ul className={styles.alertsList}>
-            {alerts.map((alert) => (
-              <li 
-                key={alert.id} 
-                className={styles.alertItem}
-                style={{ 
-                  borderLeftColor: 
-                    alert.type === 'danger' ? 'var(--error)' : 
-                    alert.type === 'warning' ? 'var(--color-warning)' : 'var(--primary)' 
-                }}
-              >
-                <div className={styles.alertContent}>
-                  <div className={styles.alertHeading}>{alert.title}</div>
-                  <div className={styles.alertMeta}>
-                    <span>{alert.camera}</span>
-                    <span className="tabular-nums">{alert.time}</span>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
         </div>
       </div>
+
+      {/* ── Full Image Viewer Modal ─────────────────────────────────────── */}
+      {selectedViolationImage && (
+        <div 
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+          }}
+          onClick={() => setSelectedViolationImage(null)}
+        >
+          <div style={{ position: 'relative', maxWidth: '90%', maxHeight: '90%' }} onClick={e => e.stopPropagation()}>
+            <img 
+              src={selectedViolationImage} 
+              alt="Violation Log Full Details" 
+              style={{ maxWidth: '100%', maxHeight: '80vh', borderRadius: '12px', border: '2px solid rgba(255,255,255,0.15)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }} 
+            />
+            <button 
+              style={{
+                position: 'absolute', top: '-40px', right: '0', background: 'transparent', border: 'none',
+                color: '#fff', fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+              }}
+              onClick={() => setSelectedViolationImage(null)}
+            >
+              <span className="material-symbols-outlined">close</span>
+              <span style={{ fontSize: '14px', fontWeight: 500 }}>Đóng</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
