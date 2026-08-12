@@ -7,6 +7,7 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+# Trigger reload after boto3 install
 
 class MinioStorageClient:
     """

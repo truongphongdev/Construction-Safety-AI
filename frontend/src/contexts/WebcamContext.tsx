@@ -22,6 +22,7 @@ export function WebcamProvider({ children }: { children: React.ReactNode }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<any>(null);
+  const isUploadingRef = useRef<boolean>(false);
   
   useEffect(() => {
     // Create hidden video element for local stream capture
@@ -69,7 +70,7 @@ export function WebcamProvider({ children }: { children: React.ReactNode }) {
       }
       setIsWebcamActive(true);
 
-      intervalRef.current = setInterval(captureWebcamFrameAndUpload, 500);
+      intervalRef.current = setInterval(captureWebcamFrameAndUpload, 350);
     } catch (err) {
       console.error("Không thể mở webcam:", err);
       alert("Không thể truy cập camera máy tính. Vui lòng cấp quyền.");
@@ -78,39 +79,48 @@ export function WebcamProvider({ children }: { children: React.ReactNode }) {
   };
 
   const captureWebcamFrameAndUpload = async () => {
-    if (!videoRef.current || !streamRef.current) return;
+    if (!videoRef.current || !streamRef.current || isUploadingRef.current) return;
+    isUploadingRef.current = true;
     try {
       const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 480;
+      canvas.width = 320;
+      canvas.height = 240;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      ctx.drawImage(videoRef.current, 0, 0, 640, 480);
+      ctx.drawImage(videoRef.current, 0, 0, 320, 240);
       
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const formData = new FormData();
-        formData.append('file', blob, 'webcam.jpg');
-
-        try {
-          const serverHost = API_BASE.replace('/api/v1', '');
-          const res = await fetch(`${serverHost}/stream/webcam/${cameraId}`, {
-            method: 'POST',
-            body: formData
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.annotated_image) {
-              setWebcamFrame(data.annotated_image);
-            }
+      await new Promise<void>((resolve) => {
+        canvas.toBlob(async (blob) => {
+          if (!blob) {
+            resolve();
+            return;
           }
-        } catch (e) {
-          console.error("Lỗi gửi frame webcam lên backend:", e);
-        }
-      }, 'image/jpeg', 0.8);
+          const formData = new FormData();
+          formData.append('file', blob, 'webcam.jpg');
+
+          try {
+            const res = await fetch(`${API_BASE}/webcam/${cameraId}`, {
+              method: 'POST',
+              body: formData
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.annotated_image) {
+                setWebcamFrame(data.annotated_image);
+              }
+            }
+          } catch (e) {
+            console.error("Lỗi gửi frame webcam lên backend:", e);
+          } finally {
+            resolve();
+          }
+        }, 'image/jpeg', 0.6);
+      });
     } catch (e) {
       console.error("Lỗi capture frame:", e);
+    } finally {
+      isUploadingRef.current = false;
     }
   };
 

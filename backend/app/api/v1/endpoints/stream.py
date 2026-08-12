@@ -15,7 +15,7 @@ from app.config import BASE_DIR
 from workers.camera_worker import get_latest_mjpeg_frame
 from workers.worker_manager import global_worker_manager
 from workers.event_consumer import register_ws_callback, global_event_consumer
-from app.ai.local_client import LocalPPEClient
+from app.ai.local_client import get_local_ppe_client
 from analytics.ppe_checker import PPEChecker
 from analytics.zone_checker import ZoneChecker
 from app.core.event_bus import global_event_bus
@@ -166,9 +166,10 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
     ppe_checker = webcam_ppe_checkers[camera_id]
     zone_checker = webcam_zone_checkers[camera_id]
 
-    # Nhận diện qua local client
-    local_client = LocalPPEClient()
-    detections = local_client.detect(frame)
+    # Nhận diện qua local client singleton (tránh nạp lại model từ ổ đĩa)
+    local_client = get_local_ppe_client()
+    loop = asyncio.get_running_loop()
+    detections = await loop.run_in_executor(None, local_client.detect, frame)
 
     # Đưa vào track list mô phỏng
     tracks = []
@@ -183,20 +184,26 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
     # Phân tích vi phạm
     ppe_events = ppe_checker.check(camera_id, tracks)
     
-    # Tìm vùng cấm cho camera_id (nếu có)
-    from app.core.database import SessionLocal
-    from app.models.zone import ZoneModel
-    import uuid
-    db = SessionLocal()
+    # Tìm vùng cấm cho camera_id (nếu có, với TTL cache 30s)
+    now = time.time()
     zones = []
-    try:
-        cam_uuid = uuid.UUID(camera_id)
-        zones_db = db.query(ZoneModel).filter(ZoneModel.camera_id == cam_uuid, ZoneModel.is_active == True).all()
-        zones = [{"id": str(z.id), "name": z.name, "polygon_coords": z.polygon_coords, "severity": z.severity} for z in zones_db]
-    except Exception:
-        pass
-    finally:
-        db.close()
+    cached_zone_data = webcam_zone_checkers.get(f"{camera_id}_zones")
+    if cached_zone_data and (now - cached_zone_data["time"] < 30.0):
+        zones = cached_zone_data["zones"]
+    else:
+        from app.core.database import SessionLocal
+        from app.models.zone import ZoneModel
+        import uuid
+        db = SessionLocal()
+        try:
+            cam_uuid = uuid.UUID(camera_id)
+            zones_db = db.query(ZoneModel).filter(ZoneModel.camera_id == cam_uuid, ZoneModel.is_active == True).all()
+            zones = [{"id": str(z.id), "name": z.name, "polygon_coords": z.polygon_coords, "severity": z.severity} for z in zones_db]
+            webcam_zone_checkers[f"{camera_id}_zones"] = {"zones": zones, "time": now}
+        except Exception:
+            pass
+        finally:
+            db.close()
 
     zone_events = zone_checker.check(camera_id, tracks, zones)
 
@@ -224,8 +231,8 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
             2
         )
 
-    # Convert annotated image back to base64
-    ret, jpeg_buf = cv2.imencode(".jpg", annotated)
+    # Convert annotated image back to base64 với JPEG quality 65% để tối ưu băng thông
+    ret, jpeg_buf = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
     base64_img = ""
     if ret:
         base64_img = f"data:image/jpeg;base64,{base64.b64encode(jpeg_buf).decode('utf-8')}"

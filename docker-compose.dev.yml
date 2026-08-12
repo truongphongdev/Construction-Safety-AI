@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  # ── MinIO Object Storage (Development Only) ─────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: safety_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9002:9000" # Map API port to 9002 on host to avoid any conflicts
+      - "9001:9001" # Map Console port to 9001 on host
+    volumes:
+      - minio_data_dev:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Helper to automatically create the bucket ──────────────────────────────
+  minio-create-bucket:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      mc mb myminio/construction-safety-evidence --ignore-existing;
+      mc anonymous set download myminio/construction-safety-evidence;
+      "
+
+volumes:
+  minio_data_dev:

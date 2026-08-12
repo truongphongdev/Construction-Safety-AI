@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 import numpy as np
+from typing import Optional
 
 from app.config import get_settings
 from ai.detector import YOLODetector
@@ -11,9 +12,9 @@ settings = get_settings()
 LABELS = {
     0: "helmet",
     1: "no_helmet",
-    2: "vest",
-    3: "no_vest",
-    4: "person",
+    2: "no_vest",
+    3: "person",
+    4: "vest",
 }
 
 class LocalPPEClient:
@@ -76,12 +77,13 @@ class LocalPPEClient:
             detections = []
             if results and len(results) > 0:
                 res = results[0]
+                model_names = getattr(res, "names", None) or getattr(self.detector.model, "names", {})
                 boxes = res.boxes
                 for box in boxes:
                     xyxy = box.xyxy[0].cpu().numpy().tolist()
                     conf = float(box.conf[0].cpu().numpy())
                     cls_id = int(box.cls[0].cpu().numpy())
-                    label = LABELS.get(cls_id, f"class_{cls_id}")
+                    label = model_names.get(cls_id, f"class_{cls_id}")
                     detections.append({
                         "bbox": [round(c, 2) for c in xyxy],
                         "confidence": round(conf, 4),
@@ -92,3 +94,14 @@ class LocalPPEClient:
         except Exception as e:
             logger.error(f"Lỗi chạy inference local: {e}")
             return []
+
+
+_global_local_client: Optional[LocalPPEClient] = None
+
+
+def get_local_ppe_client(conf_thresh: float = 0.25, iou_thresh: float = 0.45) -> LocalPPEClient:
+    """Trả về singleton LocalPPEClient để tránh nạp lại weights model mỗi frame."""
+    global _global_local_client
+    if _global_local_client is None:
+        _global_local_client = LocalPPEClient(conf_thresh=conf_thresh, iou_thresh=iou_thresh)
+    return _global_local_client

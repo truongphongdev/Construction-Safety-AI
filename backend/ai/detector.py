@@ -23,9 +23,9 @@ class YOLODetector:
     DEFAULT_LABELS = {
         0: "helmet",
         1: "no_helmet",
-        2: "vest",
-        3: "no_vest",
-        4: "person",
+        2: "no_vest",
+        3: "person",
+        4: "vest",
         5: "zone_intrusion",
         6: "fall",
     }
@@ -69,6 +69,7 @@ class YOLODetector:
                 conf=self.conf,
                 iou=self.iou,
                 device=self.device,
+                imgsz=320,
                 verbose=False,
             )
         return results
@@ -81,6 +82,7 @@ class YOLODetector:
                 conf=self.conf,
                 iou=self.iou,
                 device=self.device,
+                imgsz=320,
                 verbose=False,
             )
         return results

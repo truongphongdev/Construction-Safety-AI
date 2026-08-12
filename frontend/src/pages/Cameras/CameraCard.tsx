@@ -40,8 +40,7 @@ export function CameraCard({ cam, onAssignVideo, onUploadFile, onDelete }: Camer
   const isThisCameraWebcam = cam.id === cameraId;
   const isWebcamRunningHere = isThisCameraWebcam && isWebcamActive;
 
-  const serverHost = API_BASE.replace('/api/v1', '');
-  const mjpegUrl = `${serverHost}/stream/stream/${cam.id}${cam.videoName ? `?video_name=${encodeURIComponent(cam.videoName)}` : ''}`;
+  const mjpegUrl = `${API_BASE}/stream/${cam.id}${cam.videoName ? `?video_name=${encodeURIComponent(cam.videoName)}` : ''}`;
 
   const toggleWebcam = () => {
     if (isWebcamActive) {

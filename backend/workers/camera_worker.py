@@ -1,12 +1,11 @@
 import time
 import logging
 import threading
-import multiprocessing
 import cv2
 import numpy as np
 from typing import Dict, List, Optional
 
-from app.ai.local_client import LocalPPEClient
+from app.ai.local_client import get_local_ppe_client
 from analytics.ppe_checker import PPEChecker
 from analytics.zone_checker import ZoneChecker
 from app.core.event_bus import global_event_bus
@@ -75,28 +74,34 @@ class LatestFrameReader:
             self.cap.release()
 
 
-class CameraWorkerProcess(multiprocessing.Process):
+class CameraWorkerThread(threading.Thread):
     """
-    Process riêng cho 1 camera.
-    Vòng lặp: Ingest frame mới nhất -> Triton Detection -> BoT-SORT Tracking -> PPE/Zone Check -> EventBus -> MJPEG Overlay.
+    Thread riêng cho 1 camera.
+    Vòng lặp: Đọc frame mới nhất (~30 FPS) -> Hiển thị MJPEG mượt.
+    Chạy AI Inference định kỳ (mỗi ~0.5 - 1.0 giây) để giảm tải CPU 90%.
     """
 
     def __init__(self, camera_id: str, source: str, zones_provider=None):
-        super().__init__()
+        super().__init__(daemon=True)
         self.camera_id = camera_id
         self.source = source
         self.zones_provider = zones_provider
-        self.stop_event = multiprocessing.Event()
+        self.stop_event = threading.Event()
+
+    def stop(self):
+        self.stop_event.set()
 
     def run(self):
-        logger.info(f"Bắt đầu Camera Worker Process cho camera: {self.camera_id} (Source: {self.source})")
+        logger.info(f"Bắt đầu Camera Worker Thread cho camera: {self.camera_id} (Source: {self.source})")
         reader = LatestFrameReader(self.source)
-        local_client = LocalPPEClient()
+        local_client = get_local_ppe_client()
         ppe_checker = PPEChecker(cooldown_seconds=30.0)
         zone_checker = ZoneChecker(debounce_frames=5, cooldown_seconds=30.0)
 
-        # Simple ID Tracker fallback
         track_counter = 0
+        last_inference_time = 0.0
+        inference_interval = 0.25  # Chạy AI mỗi 0.25s (4 FPS AI) — GPU RTX 2050 xử lý cực nhanh
+        latest_tracks: List[dict] = []
 
         try:
             while not self.stop_event.is_set():
@@ -105,39 +110,45 @@ class CameraWorkerProcess(multiprocessing.Process):
                     time.sleep(0.01)
                     continue
 
-                # 1. Detection local
-                detections = local_client.detect(frame)
+                now = time.time()
 
-                # 2. Tracking simulation / BoT-SORT mapping
-                tracks = []
-                for det in detections:
-                    track_counter += 1
-                    tracks.append({
-                        "track_id": f"cam{self.camera_id[:4]}-{track_counter % 1000}",
-                        "bbox": det["bbox"],
-                        "label": det["label"],
-                        "confidence": det["confidence"],
-                    })
-
-                # 3. Phân tích PPE & Zone
-                ppe_events = ppe_checker.check(self.camera_id, tracks)
-
-                zones = []
-                if self.zones_provider:
+                # 1. Định kỳ chạy AI Inference nếu đủ thời gian giãn cách
+                if now - last_inference_time >= inference_interval:
+                    last_inference_time = now
                     try:
-                        zones = self.zones_provider(self.camera_id)
-                    except Exception:
-                        pass
-                zone_events = zone_checker.check(self.camera_id, tracks, zones)
+                        detections = local_client.detect(frame)
+                        tracks = []
+                        for det in detections:
+                            track_counter += 1
+                            tracks.append({
+                                "track_id": f"cam{self.camera_id[:4]}-{track_counter % 1000}",
+                                "bbox": det["bbox"],
+                                "label": det["label"],
+                                "confidence": det["confidence"],
+                            })
+                        latest_tracks = tracks
 
-                # 4. Phát sự kiện tới EventBus
-                for evt in ppe_events + zone_events:
-                    evt["frame_jpg"] = frame.copy()
-                    global_event_bus.publish(evt)
+                        # Phân tích vi phạm
+                        ppe_events = ppe_checker.check(self.camera_id, latest_tracks)
 
-                # 5. Vẽ overlay Bbox & Labels
+                        zones = []
+                        if self.zones_provider:
+                            try:
+                                zones = self.zones_provider(self.camera_id)
+                            except Exception:
+                                pass
+                        zone_events = zone_checker.check(self.camera_id, latest_tracks, zones)
+
+                        # Phát sự kiện tới EventBus
+                        for evt in ppe_events + zone_events:
+                            evt["frame_jpg"] = frame.copy()
+                            global_event_bus.publish(evt)
+                    except Exception as ai_err:
+                        logger.error(f"Lỗi AI inference trong Camera Worker {self.camera_id}: {ai_err}")
+
+                # 2. Vẽ overlay Bbox & Labels lên frame hiện tại sử dụng kết quả detection mới nhất
                 annotated_frame = frame.copy()
-                for trk in tracks:
+                for trk in latest_tracks:
                     x1, y1, x2, y2 = [int(v) for v in trk["bbox"]]
                     lbl = trk["label"]
                     conf = trk["confidence"]
@@ -155,15 +166,19 @@ class CameraWorkerProcess(multiprocessing.Process):
                         2
                     )
 
-                # 6. Encode JPEG & Cập nhật Ring Buffer MJPEG
-                ret, jpeg_buf = cv2.imencode(".jpg", annotated_frame)
+                # 3. Encode JPEG & Cập nhật Buffer MJPEG (đảm bảo luồng xem video mượt)
+                ret, jpeg_buf = cv2.imencode(".jpg", annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
                 if ret:
                     set_latest_mjpeg_frame(self.camera_id, jpeg_buf.tobytes())
 
-                time.sleep(0.03)  # ~30 FPS loop control
+                time.sleep(0.04)  # ~25 FPS stream loop control
 
         except Exception as e:
-            logger.error(f"Lỗi trong Camera Worker Process {self.camera_id}: {e}", exc_info=True)
+            logger.error(f"Lỗi trong Camera Worker Thread {self.camera_id}: {e}", exc_info=True)
         finally:
             reader.stop()
-            logger.info(f"Đã dừng Camera Worker Process cho camera: {self.camera_id}")
+            logger.info(f"Đã dừng Camera Worker Thread cho camera: {self.camera_id}")
+
+# Alias giữ tương thích
+CameraWorkerProcess = CameraWorkerThread
+
