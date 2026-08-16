@@ -231,8 +231,8 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
             2
         )
 
-    # Convert annotated image back to base64 với JPEG quality 65% để tối ưu băng thông
-    ret, jpeg_buf = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+    # Convert annotated image back to base64 với JPEG quality 85% cho độ nét cao
+    ret, jpeg_buf = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
     base64_img = ""
     if ret:
         base64_img = f"data:image/jpeg;base64,{base64.b64encode(jpeg_buf).decode('utf-8')}"

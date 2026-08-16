@@ -61,7 +61,7 @@ export function WebcamProvider({ children }: { children: React.ReactNode }) {
     try {
       setStreamError(false);
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 }
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } }
       });
       streamRef.current = stream;
       if (videoRef.current) {
@@ -70,7 +70,7 @@ export function WebcamProvider({ children }: { children: React.ReactNode }) {
       }
       setIsWebcamActive(true);
 
-      intervalRef.current = setInterval(captureWebcamFrameAndUpload, 350);
+      intervalRef.current = setInterval(captureWebcamFrameAndUpload, 200);
     } catch (err) {
       console.error("Không thể mở webcam:", err);
       alert("Không thể truy cập camera máy tính. Vui lòng cấp quyền.");
@@ -83,12 +83,12 @@ export function WebcamProvider({ children }: { children: React.ReactNode }) {
     isUploadingRef.current = true;
     try {
       const canvas = document.createElement('canvas');
-      canvas.width = 320;
-      canvas.height = 240;
+      canvas.width = 640;
+      canvas.height = 480;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      ctx.drawImage(videoRef.current, 0, 0, 320, 240);
+      ctx.drawImage(videoRef.current, 0, 0, 640, 480);
       
       await new Promise<void>((resolve) => {
         canvas.toBlob(async (blob) => {
@@ -115,7 +115,7 @@ export function WebcamProvider({ children }: { children: React.ReactNode }) {
           } finally {
             resolve();
           }
-        }, 'image/jpeg', 0.6);
+        }, 'image/jpeg', 0.85);
       });
     } catch (e) {
       console.error("Lỗi capture frame:", e);

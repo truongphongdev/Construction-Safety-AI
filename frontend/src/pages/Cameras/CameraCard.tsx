@@ -15,12 +15,15 @@ export interface CameraItem {
   videoBlob?: string;
 }
 
-export const DEMO_VIDEOS = [
-  { label: '-- Chưa chọn video --', value: '' },
-  { label: '[Demo 1] People on Construction Site', value: '6000215_People_Person_1280x720.mp4' },
-  { label: '[Demo 2] Safety Monitoring Scene', value: '548283_Coronavirus_Covid_19_1920x1080.mp4' },
-  { label: '[Demo 3] PPE Test Video', value: 'PPE_test.mp4' },
-];
+export interface CameraItem {
+  id: string;
+  name: string;
+  location: string;
+  status: 'online' | 'offline';
+  rtspUrl?: string;
+  videoName?: string;
+  videoBlob?: string;
+}
 
 interface CameraCardProps {
   cam: CameraItem;
@@ -130,25 +133,6 @@ export function CameraCard({ cam, onAssignVideo, onUploadFile, onDelete }: Camer
 
       {/* Controls */}
       <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--outline-variant)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-          <select
-            value={cam.videoName || ''}
-            disabled={isWebcamRunningHere}
-            onChange={(e) => {
-              setStreamError(false);
-              onAssignVideo(cam.id, e.target.value);
-            }}
-            style={{
-              flex: 1, padding: '8px 12px', borderRadius: '6px', fontSize: '12px',
-              border: '1px solid var(--outline-variant)', background: 'var(--surface-lowest)', color: 'var(--on-surface)'
-            }}
-          >
-            {DEMO_VIDEOS.map(v => (
-              <option key={v.value} value={v.value} style={{ background: 'var(--surface-lowest)', color: 'var(--on-surface)' }}>{v.label}</option>
-            ))}
-          </select>
-        </div>
-
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {isThisCameraWebcam && (
             <button

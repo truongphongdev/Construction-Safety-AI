@@ -33,13 +33,18 @@ def set_latest_mjpeg_frame(camera_id: str, frame_bytes: bytes):
 class LatestFrameReader:
     """Đọc video stream/file liên tục và chỉ giữ frame mới nhất (loại bỏ lag buffer)."""
 
+    def _create_capture(self):
+        if isinstance(self.source, int):
+            return cv2.VideoCapture(self.source, cv2.CAP_DSHOW)
+        return cv2.VideoCapture(self.source)
+
     def __init__(self, source: str):
         self.source = source
         # Kiểm tra nếu source là số (USB cam)
         if str(source).isdigit():
             self.source = int(source)
 
-        self.cap = cv2.VideoCapture(self.source)
+        self.cap = self._create_capture()
         self._frame = None
         self._running = True
         self._lock = threading.Lock()
@@ -50,7 +55,7 @@ class LatestFrameReader:
         while self._running:
             if not self.cap.isOpened():
                 time.sleep(0.5)
-                self.cap = cv2.VideoCapture(self.source)
+                self.cap = self._create_capture()
                 continue
 
             ret, frame = self.cap.read()
@@ -166,8 +171,8 @@ class CameraWorkerThread(threading.Thread):
                         2
                     )
 
-                # 3. Encode JPEG & Cập nhật Buffer MJPEG (đảm bảo luồng xem video mượt)
-                ret, jpeg_buf = cv2.imencode(".jpg", annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+                # 3. Encode JPEG & Cập nhật Buffer MJPEG (đảm bảo luồng xem video mượt và nét)
+                ret, jpeg_buf = cv2.imencode(".jpg", annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
                 if ret:
                     set_latest_mjpeg_frame(self.camera_id, jpeg_buf.tobytes())
 

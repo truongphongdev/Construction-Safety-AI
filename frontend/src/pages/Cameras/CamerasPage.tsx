@@ -2,19 +2,18 @@ import React, { useState, useEffect } from 'react';
 import styles from './CamerasPage.module.css';
 import { fetchCameras, createCamera, deleteCamera } from '../../services';
 import type { Camera as ApiCamera } from '../../services';
-import { CameraCard, DEMO_VIDEOS } from './CameraCard';
+import { CameraCard } from './CameraCard';
 import type { CameraItem } from './CameraCard';
 
 export default function CamerasPage() {
   const [cameras, setCameras] = useState<CameraItem[]>([
-    { id: '00000000-0000-0000-0000-000000000001', name: 'Camera 01 - Webcam Laptop', location: 'Bàn làm việc', status: 'online', videoName: '6000215_People_Person_1280x720.mp4' },
+    { id: '00000000-0000-0000-0000-000000000001', name: 'Camera 01 - Webcam Laptop', location: 'Bàn làm việc', status: 'online' },
   ]);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCamName, setNewCamName] = useState('');
   const [newCamLoc, setNewCamLoc] = useState('');
   const [newRtspUrl, setNewRtspUrl] = useState('');
-  const [selectedDemoVideo, setSelectedDemoVideo] = useState('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   // Helper to update cameras state and sync assignments to localStorage
@@ -29,7 +28,6 @@ export default function CamerasPage() {
 
   useEffect(() => {
     let isMounted = true;
-    const defaultVideos = ['6000215_People_Person_1280x720.mp4'];
 
     const loadCameras = async () => {
       try {
@@ -38,16 +36,15 @@ export default function CamerasPage() {
           const savedAssignmentsStr = localStorage.getItem('camera_video_assignments');
           const savedAssignments = savedAssignmentsStr ? JSON.parse(savedAssignmentsStr) : [];
 
-          const mappedCams = apiCams.map((c: ApiCamera, index: number) => {
+          const mappedCams = apiCams.map((c: ApiCamera) => {
             const assignment = savedAssignments.find((a: any) => a.id === c.id);
-            const fallbackVideo = defaultVideos[index % defaultVideos.length];
             return {
               id: c.id,
               name: c.name,
               location: c.location || c.location_desc || 'Chưa xác định',
               status: 'online' as const,
               rtspUrl: c.rtsp_url || c.ip_address,
-              videoName: assignment ? assignment.videoName : fallbackVideo,
+              videoName: assignment ? assignment.videoName : undefined,
               videoBlob: assignment?.videoBlob || undefined
             };
           });
@@ -58,11 +55,11 @@ export default function CamerasPage() {
             localStorage.setItem('camera_video_assignments', JSON.stringify(assignments));
           } else {
             if (savedAssignmentsStr) {
-              setCameras(prev => prev.map((c, index) => {
+              setCameras(prev => prev.map(c => {
                 const assignment = savedAssignments.find((a: any) => a.id === c.id);
                 return {
                   ...c,
-                  videoName: assignment ? assignment.videoName : defaultVideos[index % defaultVideos.length],
+                  videoName: assignment ? assignment.videoName : undefined,
                   videoBlob: assignment?.videoBlob || c.videoBlob
                 };
               }));
@@ -73,11 +70,11 @@ export default function CamerasPage() {
         const savedAssignmentsStr = localStorage.getItem('camera_video_assignments');
         if (savedAssignmentsStr) {
           const savedAssignments = JSON.parse(savedAssignmentsStr);
-          setCameras(prev => prev.map((c, index) => {
+          setCameras(prev => prev.map(c => {
             const assignment = savedAssignments.find((a: any) => a.id === c.id);
             return {
               ...c,
-              videoName: assignment ? assignment.videoName : defaultVideos[index % defaultVideos.length],
+              videoName: assignment ? assignment.videoName : undefined,
               videoBlob: assignment?.videoBlob || c.videoBlob
             };
           }));
@@ -147,7 +144,6 @@ export default function CamerasPage() {
         location: created.location_desc || newCamLoc || 'Công trường',
         status: 'online',
         rtspUrl: created.ip_address || newRtspUrl || undefined,
-        videoName: selectedDemoVideo || '6000215_People_Person_1280x720',
         videoBlob: uploadedFile ? URL.createObjectURL(uploadedFile) : undefined,
       };
 
@@ -161,7 +157,6 @@ export default function CamerasPage() {
         location: newCamLoc || 'Công trường',
         status: 'online',
         rtspUrl: newRtspUrl || undefined,
-        videoName: selectedDemoVideo || '6000215_People_Person_1280x720',
         videoBlob: uploadedFile ? URL.createObjectURL(uploadedFile) : undefined,
       };
       updateCamerasState(prev => [...prev, newCam]);
@@ -169,7 +164,7 @@ export default function CamerasPage() {
 
     setShowAddModal(false);
     setNewCamName(''); setNewCamLoc(''); setNewRtspUrl('');
-    setSelectedDemoVideo(''); setUploadedFile(null);
+    setUploadedFile(null);
   };
 
   return (
@@ -177,9 +172,9 @@ export default function CamerasPage() {
       {/* Page Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700 }}>Quản lý Camera & Video Demo</h2>
+          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700 }}>Quản lý Camera</h2>
           <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
-            Gán video demo hoặc luồng RTSP thực tế cho mỗi camera để chạy AI YOLOv8 nhận diện PPE real-time.
+            Tải lên video file hoặc kết nối luồng RTSP thực tế cho mỗi camera để chạy AI YOLOv8 nhận diện PPE real-time.
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowAddModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -224,17 +219,6 @@ export default function CamerasPage() {
                   />
                 </div>
               ))}
-
-              <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', color: 'var(--on-surface-variant)' }}>Video Demo</label>
-                <select
-                  value={selectedDemoVideo}
-                  onChange={(e) => setSelectedDemoVideo(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--outline-variant)', background: 'var(--surface-low)', color: 'var(--on-surface)', fontSize: '13px' }}
-                >
-                  {DEMO_VIDEOS.map(v => <option key={v.value} value={v.value} style={{ background: 'var(--surface-lowest)', color: 'var(--on-surface)' }}>{v.label}</option>)}
-                </select>
-              </div>
 
               <div style={{ marginBottom: '24px' }}>
                 <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', color: 'var(--on-surface-variant)' }}>Hoặc Tải lên File Video cục bộ</label>

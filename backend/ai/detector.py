@@ -51,6 +51,7 @@ class YOLODetector:
         self.conf = conf
         self.iou = iou
         self.device = device
+        self.use_half = str(self.device).lower().startswith("cuda") or str(self.device) == "0"
         self._lock = threading.Lock()
 
     def predict(self, image: np.ndarray) -> list:
@@ -69,7 +70,8 @@ class YOLODetector:
                 conf=self.conf,
                 iou=self.iou,
                 device=self.device,
-                imgsz=320,
+                imgsz=640,
+                half=self.use_half,
                 verbose=False,
             )
         return results
@@ -82,7 +84,8 @@ class YOLODetector:
                 conf=self.conf,
                 iou=self.iou,
                 device=self.device,
-                imgsz=320,
+                imgsz=640,
+                half=self.use_half,
                 verbose=False,
             )
         return results
