@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './CamerasPage.module.css';
 import { useWebcam } from '@/contexts/WebcamContext';
+import type { DetectedObject } from '@/contexts/WebcamContext';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -24,22 +25,109 @@ interface CameraCardProps {
 
 export function CameraCard({ cam, onUploadFile, onDelete }: CameraCardProps) {
   const [isZoomed, setIsZoomed] = useState(false);
-  const [videoAIFrame, setVideoAIFrame] = useState<string | null>(null);
+  const [localDetections, setLocalDetections] = useState<DetectedObject[]>([]);
+  
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const webcamVideoRef = useRef<HTMLVideoElement | null>(null);
+  const webcamCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const localCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  
+  const zoomVideoRef = useRef<HTMLVideoElement | null>(null);
+  const zoomCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  
   const isAnalyzingRef = useRef<boolean>(false);
+  const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   
   // Global webcam state
-  const { isWebcamActive, webcamFrame, startWebcam, stopWebcam, cameraId } = useWebcam();
+  const { isWebcamActive, webcamStream, detections: webcamDetections, startWebcam, stopWebcam, cameraId } = useWebcam();
   
   const isThisCameraWebcam = cam.id === cameraId;
   const isWebcamRunningHere = isThisCameraWebcam && isWebcamActive;
   const hasLocalVideo = Boolean(cam.videoBlob);
 
+  // Helper vẽ bounding box
+  const drawBoxes = useCallback((canvas: HTMLCanvasElement | null, detections: DetectedObject[]) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      if (canvas.width !== Math.floor(rect.width) || canvas.height !== Math.floor(rect.height)) {
+        canvas.width = Math.floor(rect.width);
+        canvas.height = Math.floor(rect.height);
+      }
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const scaleX = canvas.width / 640;
+    const scaleY = canvas.height / 480;
+
+    detections.forEach(det => {
+      const [xmin, ymin, xmax, ymax] = det.bbox;
+      const x = xmin * scaleX;
+      const y = ymin * scaleY;
+      const w = (xmax - xmin) * scaleX;
+      const h = (ymax - ymin) * scaleY;
+
+      const isVio = det.is_violation;
+      const strokeColor = isVio ? '#ef4444' : '#22c55e';
+      const bgColor = isVio ? 'rgba(239, 68, 68, 0.9)' : 'rgba(34, 197, 94, 0.9)';
+
+      // Box viền
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = strokeColor;
+      ctx.strokeRect(x, y, w, h);
+
+      // Label background & text
+      const labelText = `${isVio ? '⚠️ ' : '✓ '}${det.label.toUpperCase()} (${(det.confidence * 100).toFixed(0)}%)`;
+      ctx.font = 'bold 12px Inter, sans-serif';
+      const textMetrics = ctx.measureText(labelText);
+      const textWidth = textMetrics.width + 12;
+      const textHeight = 20;
+
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(x, Math.max(0, y - textHeight), textWidth, textHeight);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(labelText, x + 6, Math.max(14, y - 5));
+    });
+  }, []);
+
+  // Gán stream webcam trực tiếp vào thẻ video để đạt 60 FPS từ phần cứng
+  useEffect(() => {
+    if (webcamVideoRef.current && webcamStream && isWebcamRunningHere) {
+      webcamVideoRef.current.srcObject = webcamStream;
+      webcamVideoRef.current.play().catch(() => {});
+    }
+    if (zoomVideoRef.current && webcamStream && isWebcamRunningHere && isZoomed) {
+      zoomVideoRef.current.srcObject = webcamStream;
+      zoomVideoRef.current.play().catch(() => {});
+    }
+  }, [webcamStream, isWebcamRunningHere, isZoomed]);
+
+  // Vẽ bounding box cho Webcam (cả thẻ nhỏ và modal phóng to)
+  useEffect(() => {
+    if (!isWebcamRunningHere) return;
+    drawBoxes(webcamCanvasRef.current, webcamDetections);
+    if (isZoomed) {
+      drawBoxes(zoomCanvasRef.current, webcamDetections);
+    }
+  }, [webcamDetections, isWebcamRunningHere, isZoomed, drawBoxes]);
+
   // Xử lý AI nhận diện cho video tải lên
   useEffect(() => {
     if (!hasLocalVideo) {
-      setVideoAIFrame(null);
+      setLocalDetections([]);
       return;
+    }
+
+    if (!sampleCanvasRef.current) {
+      const c = document.createElement('canvas');
+      c.width = 640;
+      c.height = 480;
+      sampleCanvasRef.current = c;
     }
 
     let isMounted = true;
@@ -51,16 +139,15 @@ export function CameraCard({ cam, onUploadFile, onDelete }: CameraCardProps) {
 
       isAnalyzingRef.current = true;
       try {
-        const canvas = document.createElement('canvas');
-        canvas.width = 640;
-        canvas.height = 480;
+        const canvas = sampleCanvasRef.current;
+        if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
         ctx.drawImage(vid, 0, 0, 640, 480);
         await new Promise<void>((resolve) => {
           canvas.toBlob(async (blob) => {
-            if (!blob) {
+            if (!blob || !isMounted) {
               resolve();
               return;
             }
@@ -68,25 +155,25 @@ export function CameraCard({ cam, onUploadFile, onDelete }: CameraCardProps) {
             formData.append('file', blob, 'video_frame.jpg');
 
             try {
-              const res = await fetch(`${API_BASE}/webcam/${cam.id}`, {
+              const res = await fetch(`${API_BASE}/webcam/${cam.id}/detect`, {
                 method: 'POST',
                 body: formData,
               });
               if (res.ok && isMounted) {
                 const data = await res.json();
-                if (data.annotated_image) {
-                  setVideoAIFrame(data.annotated_image);
+                if (data.detected_objects) {
+                  setLocalDetections(data.detected_objects);
                 }
               }
-            } catch (err) {
-              // Silently ignore frame drops
+            } catch {
+              // ignore
             } finally {
               resolve();
             }
           }, 'image/jpeg', 0.85);
         });
       } catch {
-        // Silently ignore
+        // ignore
       } finally {
         isAnalyzingRef.current = false;
       }
@@ -97,6 +184,15 @@ export function CameraCard({ cam, onUploadFile, onDelete }: CameraCardProps) {
       clearInterval(interval);
     };
   }, [hasLocalVideo, cam.id, cam.videoBlob]);
+
+  // Vẽ bounding box cho Local Video (cả thẻ nhỏ và modal phóng to)
+  useEffect(() => {
+    if (!hasLocalVideo) return;
+    drawBoxes(localCanvasRef.current, localDetections);
+    if (isZoomed) {
+      drawBoxes(zoomCanvasRef.current, localDetections);
+    }
+  }, [localDetections, hasLocalVideo, isZoomed, drawBoxes]);
 
   const toggleWebcam = () => {
     if (isWebcamActive) {
@@ -125,37 +221,33 @@ export function CameraCard({ cam, onUploadFile, onDelete }: CameraCardProps) {
       {/* Video Viewport */}
       <div className={styles.streamContainer}>
         {isWebcamRunningHere ? (
-          <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000' }}>
-            {/* Show annotated frame from backend */}
-            {webcamFrame ? (
-              <img
-                src={webcamFrame}
-                alt="Webcam AI"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-              />
-            ) : (
-              <div style={{
-                position: 'absolute', inset: 0, background: '#000',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                color: '#fff', gap: '10px'
-              }}>
-                <span className="material-symbols-outlined" style={{ fontSize: '32px', color: 'var(--primary)', animation: 'pulse 1.5s infinite' }}>videocam</span>
-                <span style={{ fontSize: '12px' }}>Đang kết nối Webcam & AI...</span>
-              </div>
-            )}
+          <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000', overflow: 'hidden' }}>
+            {/* Native Hardware Video - 60 FPS */}
+            <video
+              ref={webcamVideoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            />
+            {/* Zero-Lag Canvas Overlay for Bounding Boxes */}
+            <canvas
+              ref={webcamCanvasRef}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 2 }}
+            />
             <div style={{
               position: 'absolute', bottom: '8px', left: '8px',
-              background: 'rgba(34,197,94,0.85)', backdropFilter: 'blur(4px)',
+              background: 'rgba(34,197,94,0.9)', backdropFilter: 'blur(4px)',
               borderRadius: '6px', padding: '4px 10px',
               fontSize: '10px', fontWeight: 600, color: '#fff', zIndex: 3,
-              display: 'flex', alignItems: 'center', gap: '4px'
+              display: 'flex', alignItems: 'center', gap: '5px'
             }}>
-              <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#fff', animation: 'pulse 1.5s infinite' }} />
-              WEBCAM AI LIVE
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fff', animation: 'pulse 1.5s infinite' }} />
+              WEBCAM GPU AI 60 FPS
             </div>
           </div>
         ) : hasLocalVideo ? (
-          <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000' }}>
+          <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000', overflow: 'hidden' }}>
             <video
               ref={localVideoRef}
               src={cam.videoBlob}
@@ -163,27 +255,21 @@ export function CameraCard({ cam, onUploadFile, onDelete }: CameraCardProps) {
               loop
               muted
               playsInline
-              style={{
-                width: '100%', height: '100%', objectFit: 'cover',
-                display: videoAIFrame ? 'none' : 'block'
-              }}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
-            {videoAIFrame && (
-              <img
-                src={videoAIFrame}
-                alt="Video AI Live"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-              />
-            )}
+            <canvas
+              ref={localCanvasRef}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 2 }}
+            />
             <div style={{
               position: 'absolute', bottom: '8px', left: '8px',
-              background: videoAIFrame ? 'rgba(34,197,94,0.85)' : 'rgba(59,130,246,0.85)', backdropFilter: 'blur(4px)',
+              background: localDetections.length > 0 ? 'rgba(34,197,94,0.9)' : 'rgba(59,130,246,0.9)', backdropFilter: 'blur(4px)',
               borderRadius: '6px', padding: '4px 10px',
               fontSize: '10px', fontWeight: 600, color: '#fff', zIndex: 3,
-              display: 'flex', alignItems: 'center', gap: '4px'
+              display: 'flex', alignItems: 'center', gap: '5px'
             }}>
-              <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#fff', animation: 'pulse 1.5s infinite' }} />
-              {videoAIFrame ? 'VIDEO AI GIÁM SÁT' : 'VIDEO ĐANG CHẠY'}
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fff', animation: 'pulse 1.5s infinite' }} />
+              {localDetections.length > 0 ? 'VIDEO GPU AI GIÁM SÁT' : 'VIDEO ĐANG CHẠY'}
             </div>
           </div>
         ) : (
@@ -281,41 +367,112 @@ export function CameraCard({ cam, onUploadFile, onDelete }: CameraCardProps) {
         </div>
       </div>
 
-      {/* Zoom Modal */}
+      {/* Zoom Modal - Full Screen Detail */}
       {isZoomed && createPortal(
         <div
           style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '24px'
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px'
           }}
           onClick={() => setIsZoomed(false)}
         >
-          <div style={{ position: 'relative', width: '100%', maxWidth: '880px' }} onClick={e => e.stopPropagation()}>
-            <div style={{ background: '#000', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--outline-variant)' }}>
-              {isWebcamRunningHere && webcamFrame ? (
-                <img src={webcamFrame} alt={cam.name} style={{ width: '100%', maxHeight: '80vh', objectFit: 'contain', display: 'block' }} />
+          <div
+            style={{
+              position: 'relative', width: '100%', maxWidth: '960px',
+              background: '#111827', borderRadius: '16px', overflow: 'hidden',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '14px 20px', background: 'rgba(17, 24, 39, 0.95)', borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{
+                  width: '10px', height: '10px', borderRadius: '50%',
+                  background: isWebcamRunningHere || hasLocalVideo ? '#22c55e' : '#6b7280',
+                  boxShadow: isWebcamRunningHere || hasLocalVideo ? '0 0 10px #22c55e' : 'none'
+                }} />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '14px', color: '#f3f4f6' }}>{cam.name}</div>
+                  <div style={{ fontSize: '12px', color: '#9ca3af' }}>{cam.location}</div>
+                </div>
+              </div>
+              
+              <button
+                style={{
+                  background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '8px',
+                  color: '#f3f4f6', padding: '6px 12px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px'
+                }}
+                onClick={() => setIsZoomed(false)}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>close</span>
+                Đóng
+              </button>
+            </div>
+
+            {/* Modal Video Viewport */}
+            <div style={{ position: 'relative', width: '100%', height: '540px', background: '#000', overflow: 'hidden' }}>
+              {isWebcamRunningHere ? (
+                <>
+                  <video
+                    ref={zoomVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                  />
+                  <canvas
+                    ref={zoomCanvasRef}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 2 }}
+                  />
+                  <div style={{
+                    position: 'absolute', bottom: '12px', left: '12px',
+                    background: 'rgba(34,197,94,0.9)', backdropFilter: 'blur(6px)',
+                    borderRadius: '8px', padding: '6px 12px',
+                    fontSize: '11px', fontWeight: 600, color: '#fff', zIndex: 3,
+                    display: 'flex', alignItems: 'center', gap: '6px'
+                  }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fff', animation: 'pulse 1.5s infinite' }} />
+                    WEBCAM GPU AI 60 FPS LIVE
+                  </div>
+                </>
               ) : hasLocalVideo ? (
-                videoAIFrame ? (
-                  <img src={videoAIFrame} alt={cam.name} style={{ width: '100%', maxHeight: '80vh', objectFit: 'contain', display: 'block' }} />
-                ) : (
-                  <video src={cam.videoBlob} autoPlay loop muted playsInline style={{ width: '100%', maxHeight: '80vh', display: 'block' }} />
-                )
+                <>
+                  <video
+                    src={cam.videoBlob}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                  />
+                  <canvas
+                    ref={zoomCanvasRef}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 2 }}
+                  />
+                  <div style={{
+                    position: 'absolute', bottom: '12px', left: '12px',
+                    background: localDetections.length > 0 ? 'rgba(34,197,94,0.9)' : 'rgba(59,130,246,0.9)', backdropFilter: 'blur(6px)',
+                    borderRadius: '8px', padding: '6px 12px',
+                    fontSize: '11px', fontWeight: 600, color: '#fff', zIndex: 3,
+                    display: 'flex', alignItems: 'center', gap: '6px'
+                  }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fff', animation: 'pulse 1.5s infinite' }} />
+                    {localDetections.length > 0 ? 'VIDEO GPU AI GIÁM SÁT' : 'VIDEO ĐANG CHẠY'}
+                  </div>
+                </>
               ) : (
-                <div style={{ height: '360px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-                  Camera đang tắt
+                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', gap: '10px' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: '48px', opacity: 0.5 }}>videocam_off</span>
+                  <div>Camera đang tắt</div>
                 </div>
               )}
             </div>
-            <button
-              style={{
-                position: 'absolute', top: '-40px', right: 0, background: 'transparent', border: 'none',
-                color: '#fff', fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
-              }}
-              onClick={() => setIsZoomed(false)}
-            >
-              <span className="material-symbols-outlined">close</span>
-              <span style={{ fontSize: '14px' }}>Đóng</span>
-            </button>
           </div>
         </div>,
         document.body

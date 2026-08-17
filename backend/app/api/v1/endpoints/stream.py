@@ -257,3 +257,98 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
             } for trk in tracks
         ]
     }
+
+
+@router.post("/webcam/{camera_id}/detect", summary="Nhận frame webcam, chạy AI GPU và chỉ trả về tọa độ Bounding Box (Siêu nhẹ)")
+async def detect_webcam_frame_lightweight(camera_id: str, file: UploadFile = File(...)):
+    """
+    Endpoint tối ưu hiệu năng cao cho Native Video Canvas Overlay.
+    Không encode ảnh Base64 -> Giảm 99% payload xuống 0.5KB.
+    Tự động ghi clip MP4 vi phạm và lưu vào DB khi phát hiện vi phạm.
+    """
+    img_bytes = await file.read()
+    nparr = np.frombuffer(img_bytes, np.uint8)
+    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if frame is None:
+        raise HTTPException(status_code=400, detail="Không thể decode ảnh.")
+
+    # Cấu hình / Lấy checkers & buffers
+    if camera_id not in webcam_ppe_checkers:
+        webcam_ppe_checkers[camera_id] = PPEChecker(cooldown_seconds=5.0)
+        webcam_zone_checkers[camera_id] = ZoneChecker(debounce_frames=2, cooldown_seconds=5.0)
+        webcam_frame_buffers[camera_id] = deque(maxlen=30)  # Buffer 6 giây @ 5 FPS
+
+    ppe_checker = webcam_ppe_checkers[camera_id]
+    zone_checker = webcam_zone_checkers[camera_id]
+    frame_buf = webcam_frame_buffers[camera_id]
+
+    # Nhận diện qua local client singleton trên GPU
+    local_client = get_local_ppe_client()
+    loop = asyncio.get_running_loop()
+    detections = await loop.run_in_executor(None, local_client.detect, frame)
+
+    tracks = []
+    detected_objects = []
+    for idx, det in enumerate(detections):
+        lbl = det["label"]
+        conf = det["confidence"]
+        bbox = det["bbox"]
+        lbl_clean = str(lbl).lower().replace("-", "_").replace(" ", "_")
+        is_vio = lbl_clean in ["no_helmet", "no_vest", "no_hardhat", "fall", "zone_intrusion"]
+
+        tracks.append({
+            "track_id": f"webcam-{idx}",
+            "bbox": bbox,
+            "label": lbl,
+            "confidence": conf
+        })
+        detected_objects.append({
+            "label": lbl,
+            "confidence": conf,
+            "bbox": bbox,
+            "is_violation": is_vio
+        })
+
+    # Phân tích vi phạm
+    ppe_events = ppe_checker.check(camera_id, tracks)
+
+    # Tìm vùng cấm (TTL cache 30s)
+    now = time.time()
+    zones = []
+    cached_zone_data = webcam_zone_checkers.get(f"{camera_id}_zones")
+    if cached_zone_data and (now - cached_zone_data["time"] < 30.0):
+        zones = cached_zone_data["zones"]
+    else:
+        from app.core.database import SessionLocal
+        from app.models.zone import ZoneModel
+        import uuid
+        db = SessionLocal()
+        try:
+            cam_uuid = uuid.UUID(camera_id) if len(camera_id) == 36 else uuid.UUID("00000000-0000-0000-0000-000000000001")
+            zones_db = db.query(ZoneModel).filter(ZoneModel.camera_id == cam_uuid, ZoneModel.is_active == True).all()
+            zones = [{"id": str(z.id), "name": z.name, "polygon_coords": z.polygon_coords, "severity": z.severity} for z in zones_db]
+            webcam_zone_checkers[f"{camera_id}_zones"] = {"zones": zones, "time": now}
+        except Exception:
+            pass
+        finally:
+            db.close()
+
+    zone_events = zone_checker.check(camera_id, tracks, zones)
+
+    # Lưu frame vào buffer
+    frame_buf.append(frame.copy())
+
+    # Đẩy các vi phạm mới vào event bus
+    all_events = ppe_events + zone_events
+    if all_events:
+        buffered_frames = list(frame_buf) if len(frame_buf) > 0 else [frame.copy()]
+        for evt in all_events:
+            evt["frame_jpg"] = frame.copy()
+            evt["video_frames"] = buffered_frames
+            evt["fps"] = 5.0
+            global_event_bus.publish(evt)
+
+    return {
+        "total_violations": len(all_events),
+        "detected_objects": detected_objects
+    }
