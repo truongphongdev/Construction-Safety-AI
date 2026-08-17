@@ -31,9 +31,9 @@ class ViolationModel(Base):
     )
     worker_code = Column(String(50), nullable=True)
     track_id = Column(String(50), nullable=True)
-    evidence_key = Column(String(255), nullable=True)
+    evidence_key = Column(String(1024), nullable=True)
     video_bucket = Column(String(50), nullable=True)
-    video_path = Column(String(255), nullable=True)
+    video_path = Column(String(1024), nullable=True)
     image_path = Column(String(1024), nullable=True)
     status = Column(
         String(20),

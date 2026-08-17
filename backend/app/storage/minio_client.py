@@ -23,7 +23,6 @@ class MinioStorageClient:
         if settings.MINIO_ENDPOINT and settings.MINIO_ACCESS_KEY and settings.MINIO_SECRET_KEY:
             try:
                 import boto3
-                
                 from botocore.client import Config
                 
                 protocol = "https" if settings.MINIO_USE_SSL else "http"
@@ -37,18 +36,56 @@ class MinioStorageClient:
                     region_name="us-east-1",
                     config=Config(signature_version='s3v4')
                 )
+                self._ensure_bucket()
                 logger.info(f"Khởi tạo MinIO Client thành công ({endpoint_url}).")
             except Exception as e:
                 logger.error(f"Không thể kết nối MinIO: {e}")
         else:
             logger.warning("Chưa cấu hình MinIO credentials đầy đủ.")
 
-    def save_and_upload(self, evidence_key: str, image_bytes: bytes) -> str:
+    def _ensure_bucket(self):
+        """Tự động kiểm tra hoặc tạo bucket nếu chưa có."""
+        if self.s3_client:
+            try:
+                self.s3_client.head_bucket(Bucket=self.bucket_name)
+            except Exception:
+                try:
+                    self.s3_client.create_bucket(Bucket=self.bucket_name)
+                    logger.info(f"Đã tạo MinIO bucket: {self.bucket_name}")
+                except Exception as err:
+                    logger.debug(f"Bucket check info: {err}")
+
+    def upload_file(self, file_path: str, object_key: str, content_type: str = "video/mp4") -> str:
         """
-        Upload trực tiếp lên MinIO bucket (retry 3 lần).
+        Upload file từ ổ đĩa lên MinIO bucket (dành cho file video vi phạm .mp4).
+        Nếu MinIO không khả dụng, ngay lập tức trả về rỗng để lưu cục bộ.
         """
         if not self.s3_client:
-            logger.error("MinIO client chưa được khởi tạo. Không thể upload.")
+            return ""
+
+        if not os.path.exists(file_path):
+            return ""
+
+        try:
+            with open(file_path, "rb") as f:
+                self.s3_client.put_object(
+                    Bucket=self.bucket_name,
+                    Key=object_key,
+                    Body=f,
+                    ContentType=content_type,
+                )
+            logger.info(f"Đã upload video lên MinIO thành công: {object_key}")
+            return object_key
+        except Exception as err:
+            logger.debug(f"MinIO không kết nối được ({err}), tự động fallback sang lưu cục bộ static.")
+            return ""
+
+    def save_and_upload(self, evidence_key: str, image_bytes: bytes) -> str:
+        """
+        Upload trực tiếp byte buffer lên MinIO bucket (retry 3 lần).
+        """
+        if not self.s3_client:
+            logger.warning("MinIO client chưa được khởi tạo. Không thể upload.")
             return ""
 
         # Try uploading to MinIO
@@ -69,12 +106,12 @@ class MinioStorageClient:
         logger.error(f"Upload MinIO thất bại hoàn toàn sau 3 lần thử: {evidence_key}")
         return ""
 
-    def get_presigned_url(self, evidence_key: str, expires_in: int = 3600) -> str:
-        """Tạo Presigned URL xem ảnh trong thời hạn cho trước (mặc định 1h)."""
+    def get_presigned_url(self, evidence_key: str, expires_in: int = 86400) -> str:
+        """Tạo Presigned URL xem video/ảnh trong thời hạn cho trước (mặc định 24h)."""
         if not evidence_key:
             return ""
 
-        if evidence_key.startswith("http"):
+        if evidence_key.startswith("http") or evidence_key.startswith("/static/"):
             return evidence_key
 
         if self.s3_client:

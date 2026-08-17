@@ -10,7 +10,7 @@ class ZoneChecker:
     Áp dụng debounce (liên tiếp N frame) và cooldown per track.
     """
 
-    def __init__(self, debounce_frames: int = 5, cooldown_seconds: float = 30.0):
+    def __init__(self, debounce_frames: int = 3, cooldown_seconds: float = 5.0):
         self.debounce_frames = debounce_frames
         self.cooldown_seconds = cooldown_seconds
         # Mapping: (track_id, zone_id) -> số frame liên tiếp nằm trong zone

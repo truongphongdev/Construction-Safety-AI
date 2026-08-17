@@ -26,8 +26,8 @@ class ViolationBase(BaseModel):
     severity_level: ViolationSeverity = Field(default=ViolationSeverity.MEDIUM, description="Mức độ nghiêm trọng")
     worker_code: str | None = Field(None, max_length=50, description="Mã số công nhân (nếu có)")
     video_bucket: str | None = Field(None, max_length=50, description="Bucket lưu trữ video")
-    video_path: str | None = Field(None, max_length=255, description="Đường dẫn file video")
-    image_path: str | None = Field(None, max_length=1024, description="Đường dẫn file ảnh")
+    video_path: str | None = Field(None, max_length=2048, description="Đường dẫn file video")
+    image_path: str | None = Field(None, max_length=2048, description="Đường dẫn file ảnh")
     status: ViolationStatus = Field(default=ViolationStatus.PENDING, description="Trạng thái xử lý")
     reviewed_by: UUID | None = Field(None, description="Người phê duyệt")
     reviewed_at: datetime | None = Field(None, description="Thời điểm phê duyệt")
@@ -50,8 +50,8 @@ class ViolationUpdate(BaseModel):
     severity_level: ViolationSeverity | None = Field(None, description="Mức độ nghiêm trọng")
     worker_code: str | None = Field(None, max_length=50, description="Mã số công nhân")
     video_bucket: str | None = Field(None, max_length=50, description="Bucket lưu trữ video")
-    video_path: str | None = Field(None, max_length=255, description="Đường dẫn file video")
-    image_path: str | None = Field(None, max_length=1024, description="Đường dẫn file ảnh")
+    video_path: str | None = Field(None, max_length=2048, description="Đường dẫn file video")
+    image_path: str | None = Field(None, max_length=2048, description="Đường dẫn file ảnh")
     status: ViolationStatus | None = Field(None, description="Trạng thái xử lý")
     reviewed_by: UUID | None = Field(None, description="Người phê duyệt")
     reviewed_at: datetime | None = Field(None, description="Thời điểm phê duyệt")
@@ -74,12 +74,24 @@ class ViolationOut(ViolationBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-    @field_validator("image_path", mode="before")
+    @field_validator("image_path", "video_path", mode="before")
     @classmethod
     def generate_presigned_url(cls, v: str | None) -> str | None:
-        if v and not v.startswith("http") and not v.startswith("/static/"):
-            return minio_storage.get_presigned_url(v)
-        return v
+        if not v or v == "none":
+            return None
+        if v.startswith("http") or v.startswith("/static/"):
+            return v
+        try:
+            from app.storage.minio_client import minio_storage
+            presigned = minio_storage.get_presigned_url(v)
+            if presigned:
+                return presigned
+        except Exception:
+            pass
+        # Fallback về đường dẫn static cục bộ nếu không có URL MinIO
+        import os
+        filename = os.path.basename(v)
+        return f"/static/violations/{filename}"
 
 
 class ViolationList(BaseModel):

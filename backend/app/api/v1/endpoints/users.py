@@ -9,10 +9,16 @@ router = APIRouter()
 
 
 @router.post(
-    "/",
+    "",
     response_model=UserOut,
     status_code=status.HTTP_201_CREATED,
     summary="Tạo người dùng mới",
+)
+@router.post(
+    "/",
+    response_model=UserOut,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
 )
 def create_user(db: DbDep, user_in: UserCreate):
     service = UserService(db)
@@ -26,9 +32,14 @@ def create_user(db: DbDep, user_in: UserCreate):
 
 
 @router.get(
-    "/",
+    "",
     response_model=UserList,
     summary="Lấy danh sách người dùng",
+)
+@router.get(
+    "/",
+    response_model=UserList,
+    include_in_schema=False,
 )
 def get_users(
     db: DbDep,

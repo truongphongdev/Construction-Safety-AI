@@ -50,8 +50,16 @@ class YOLODetector:
         self.model = YOLO(model_path)
         self.conf = conf
         self.iou = iou
-        self.device = device
-        self.use_half = str(self.device).lower().startswith("cuda") or str(self.device) == "0"
+
+        import torch
+        # Tự động chuyển về cpu nếu thiết bị yêu cầu CUDA nhưng PyTorch không có CUDA
+        dev_str = str(device).lower().strip()
+        if (dev_str.startswith("cuda") or dev_str == "0") and not torch.cuda.is_available():
+            self.device = "cpu"
+        else:
+            self.device = device
+
+        self.use_half = (str(self.device).lower().startswith("cuda") or str(self.device) == "0") and torch.cuda.is_available()
         self._lock = threading.Lock()
 
     def predict(self, image: np.ndarray) -> list:

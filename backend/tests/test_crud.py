@@ -164,3 +164,35 @@ def test_violation_crud_and_validation(client: TestClient):
     response = client.delete(f"/api/v1/violations/{violation_id}")
     assert response.status_code == 200
     assert response.json()["message"] == "Bản ghi vi phạm đã được xóa mềm thành công."
+
+
+def test_video_recorder():
+    import numpy as np
+    from app.storage.video_recorder import save_violation_video
+    
+    # Tạo 10 dummy frames
+    frames = [np.zeros((240, 320, 3), dtype=np.uint8) for _ in range(10)]
+    rel_video, rel_thumb, full_video, full_thumb = save_violation_video(frames, camera_id="test_cam", violation_type="NO_HELMET", fps=10.0)
+    
+    assert rel_video is not None
+    assert rel_video.startswith("/static/violations/")
+    assert rel_video.endswith(".mp4")
+    assert rel_thumb is not None
+    assert rel_thumb.endswith(".jpg")
+    assert full_video is not None
+    assert full_thumb is not None
+
+
+def test_violation_pagination(client: TestClient):
+    # Test GET /api/v1/violations with limit and offset
+    response = client.get("/api/v1/violations/?limit=5&offset=0")
+    assert response.status_code == 200
+    data = response.json()
+    assert "total" in data
+    assert "offset" in data
+    assert "limit" in data
+    assert "items" in data
+    assert data["limit"] == 5
+    assert data["offset"] == 0
+    assert isinstance(data["items"], list)
+

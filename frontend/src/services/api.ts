@@ -24,6 +24,7 @@ export interface Violation {
   severity: 'danger' | 'warning' | 'info';
   timestamp: string;
   image_url?: string;
+  video_url?: string;
   status: string;
   details?: string;
 }
@@ -36,6 +37,7 @@ interface BackendViolation {
   severity_level: 'LOW' | 'MEDIUM' | 'CRITICAL';
   detected_time: string;
   image_path?: string;
+  video_path?: string;
   status: string;
   ai_metadata?: Record<string, unknown>;
 }
@@ -82,6 +84,7 @@ function mapBackendViolation(v: BackendViolation, cameraMap?: Record<string, str
     severity: mapSeverity(v.severity_level),
     timestamp: formattedTime,
     image_url: v.image_path,
+    video_url: v.video_path,
     status: v.status,
     details: v.ai_metadata ? JSON.stringify(v.ai_metadata) : undefined,
   };
@@ -157,17 +160,67 @@ export const createCamera = async (camera: Partial<Camera>): Promise<Camera> => 
 };
 
 // ── 4. Violations API ────────────────────────────────────────────────────────
+export interface PagedViolationsResult {
+  items: Violation[];
+  total: number;
+  offset: number;
+  limit: number;
+  page: number;
+  totalPages: number;
+}
+
 export const fetchViolations = async (cameraMap?: Record<string, string>): Promise<Violation[]> => {
   try {
     const response = await fetch(`${API_BASE_URL}/violations?limit=100`);
     if (!response.ok) throw new Error(`HTTP error ${response.status}: Không thể tải danh sách vi phạm`);
     const data: BackendViolationList = await response.json();
-    // Backend trả về { total, offset, limit, items: [...] }
     const items = Array.isArray(data) ? data : (data.items ?? []);
     return (items as BackendViolation[]).map(v => mapBackendViolation(v, cameraMap));
   } catch (err) {
     console.warn('[API Service] Lỗi khi fetch danh sách vi phạm:', err);
     return [];
+  }
+};
+
+export const fetchViolationsPaged = async (
+  page: number = 1,
+  pageSize: number = 10,
+  cameraMap?: Record<string, string>,
+  cameraId?: string,
+  status?: string
+): Promise<PagedViolationsResult> => {
+  try {
+    const offset = (page - 1) * pageSize;
+    let url = `${API_BASE_URL}/violations?limit=${pageSize}&offset=${offset}`;
+    if (cameraId) url += `&camera_id=${encodeURIComponent(cameraId)}`;
+    if (status && status !== 'all') url += `&status=${encodeURIComponent(status)}`;
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP error ${response.status}: Không thể tải danh sách vi phạm`);
+    const data: BackendViolationList = await response.json();
+    const rawItems = Array.isArray(data) ? data : (data.items ?? []);
+    const items = (rawItems as BackendViolation[]).map(v => mapBackendViolation(v, cameraMap));
+    const total = data.total ?? items.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    return {
+      items,
+      total,
+      offset,
+      limit: pageSize,
+      page,
+      totalPages,
+    };
+  } catch (err) {
+    console.warn('[API Service] Lỗi khi fetch danh sách vi phạm phân trang:', err);
+    return {
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: pageSize,
+      page: 1,
+      totalPages: 1,
+    };
   }
 };
 

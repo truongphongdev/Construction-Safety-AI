@@ -72,19 +72,12 @@ def list_videos():
 
 def mjpeg_frame_generator(camera_id: str, video_source: str = None):
     """
-    Generator tạo luồng MJPEG HTTP stream cho camera_id.
-    Nếu worker chưa chạy, tự động khởi chạy CameraWorker.
+    Generator tạo luồng MJPEG HTTP stream cho camera_id khi có nguồn video cụ thể.
     """
-    # Đảm bảo worker cho camera này đã chạy
-    status_map = global_worker_manager.get_status()
-    if not status_map.get(camera_id, False):
-        # Chọn nguồn video (nếu truyền vào video_name hoặc lấy mặc định video_demo)
-        source = video_source
-        if not source:
-            demo_files = list(VIDEO_DEMO_DIR.glob("*.mp4")) if VIDEO_DEMO_DIR.exists() else []
-            source = str(demo_files[0]) if demo_files else "0"
-
-        global_worker_manager.start_worker(camera_id, source)
+    if video_source:
+        status_map = global_worker_manager.get_status()
+        if not status_map.get(camera_id, False):
+            global_worker_manager.start_worker(camera_id, video_source)
 
     while True:
         frame_bytes = get_latest_mjpeg_frame(camera_id)
@@ -142,8 +135,10 @@ async def websocket_alerts(websocket: WebSocket):
         connected_alert_clients.discard(websocket)
 
 
+from collections import deque
 webcam_ppe_checkers = {}
 webcam_zone_checkers = {}
+webcam_frame_buffers = {}
 
 @router.post("/webcam/{camera_id}", summary="Nhận frame từ webcam máy tính và chạy AI")
 async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
@@ -158,13 +153,15 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
     if frame is None:
         raise HTTPException(status_code=400, detail="Không thể decode ảnh.")
 
-    # Cấu hình / Lấy checkers
+    # Cấu hình / Lấy checkers & buffers (5s cooldown, 6s video buffer)
     if camera_id not in webcam_ppe_checkers:
-        webcam_ppe_checkers[camera_id] = PPEChecker(cooldown_seconds=10.0)
-        webcam_zone_checkers[camera_id] = ZoneChecker(debounce_frames=2, cooldown_seconds=10.0)
+        webcam_ppe_checkers[camera_id] = PPEChecker(cooldown_seconds=5.0)
+        webcam_zone_checkers[camera_id] = ZoneChecker(debounce_frames=2, cooldown_seconds=5.0)
+        webcam_frame_buffers[camera_id] = deque(maxlen=30)  # Buffer 6 giây (30 frames @ 5 FPS)
 
     ppe_checker = webcam_ppe_checkers[camera_id]
     zone_checker = webcam_zone_checkers[camera_id]
+    frame_buf = webcam_frame_buffers[camera_id]
 
     # Nhận diện qua local client singleton (tránh nạp lại model từ ổ đĩa)
     local_client = get_local_ppe_client()
@@ -196,7 +193,7 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
         import uuid
         db = SessionLocal()
         try:
-            cam_uuid = uuid.UUID(camera_id)
+            cam_uuid = uuid.UUID(camera_id) if len(camera_id) == 36 else uuid.UUID("00000000-0000-0000-0000-000000000001")
             zones_db = db.query(ZoneModel).filter(ZoneModel.camera_id == cam_uuid, ZoneModel.is_active == True).all()
             zones = [{"id": str(z.id), "name": z.name, "polygon_coords": z.polygon_coords, "severity": z.severity} for z in zones_db]
             webcam_zone_checkers[f"{camera_id}_zones"] = {"zones": zones, "time": now}
@@ -207,19 +204,17 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
 
     zone_events = zone_checker.check(camera_id, tracks, zones)
 
-    # Đẩy các vi phạm mới vào event bus
-    for evt in ppe_events + zone_events:
-        evt["frame_jpg"] = frame.copy()
-        global_event_bus.publish(evt)
-
-    # Vẽ overlay lên hình ảnh để trả về
+    # Vẽ overlay lên hình ảnh
     annotated = frame.copy()
     for trk in tracks:
         x1, y1, x2, y2 = [int(v) for v in trk["bbox"]]
         lbl = trk["label"]
         conf = trk["confidence"]
         
-        color = (0, 255, 0) if lbl in ["helmet", "vest"] else (0, 0, 255)
+        lbl_clean = str(lbl).lower().replace("-", "_").replace(" ", "_")
+        is_safe = lbl_clean in ["helmet", "vest"]
+        color = (0, 255, 0) if is_safe else (0, 0, 255)
+        
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
         cv2.putText(
             annotated,
@@ -230,6 +225,19 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
             color,
             2
         )
+
+    # Lưu frame vào buffer
+    frame_buf.append(annotated.copy())
+
+    # Đẩy các vi phạm mới vào event bus kèm video frames
+    all_events = ppe_events + zone_events
+    if all_events:
+        buffered_frames = list(frame_buf) if len(frame_buf) > 0 else [annotated.copy()]
+        for evt in all_events:
+            evt["frame_jpg"] = annotated.copy()
+            evt["video_frames"] = buffered_frames
+            evt["fps"] = 5.0
+            global_event_bus.publish(evt)
 
     # Convert annotated image back to base64 với JPEG quality 85% cho độ nét cao
     ret, jpeg_buf = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
@@ -245,7 +253,7 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
                 "label": trk["label"],
                 "confidence": trk["confidence"],
                 "bbox": trk["bbox"],
-                "is_violation": trk["label"] in ["no_helmet", "no_vest"]
+                "is_violation": str(trk["label"]).lower().replace("-", "_") in ["no_helmet", "no_vest", "no_hardhat", "fall", "zone_intrusion"]
             } for trk in tracks
         ]
     }

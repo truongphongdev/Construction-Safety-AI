@@ -9,10 +9,16 @@ router = APIRouter()
 
 
 @router.post(
-    "/",
+    "",
     response_model=CameraOut,
     status_code=status.HTTP_201_CREATED,
     summary="Đăng ký camera mới",
+)
+@router.post(
+    "/",
+    response_model=CameraOut,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
 )
 def create_camera(db: DbDep, camera_in: CameraCreate):
     service = CameraService(db)
@@ -20,9 +26,14 @@ def create_camera(db: DbDep, camera_in: CameraCreate):
 
 
 @router.get(
-    "/",
+    "",
     response_model=CameraList,
     summary="Lấy danh sách camera",
+)
+@router.get(
+    "/",
+    response_model=CameraList,
+    include_in_schema=False,
 )
 def get_cameras(
     db: DbDep,

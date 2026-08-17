@@ -33,9 +33,12 @@ export function WebcamProvider({ children }: { children: React.ReactNode }) {
     document.body.appendChild(video);
     videoRef.current = video;
 
+    // Tự động khởi động camera máy tính mặc định khi vừa mở app
+    startWebcam(true);
+
     return () => {
       stopWebcam();
-      if (videoRef.current) {
+      if (videoRef.current && document.body.contains(videoRef.current)) {
         document.body.removeChild(videoRef.current);
       }
     };
@@ -57,29 +60,51 @@ export function WebcamProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const startWebcam = async () => {
+  const startWebcam = async (isAutoStart: boolean = false) => {
     try {
       setStreamError(false);
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn("Trình duyệt không hỗ trợ getUserMedia.");
+        setStreamError(true);
+        return;
+      }
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 } }
       });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(e => console.error("Play error:", e));
+        videoRef.current.play().catch(e => {
+          if (e.name !== 'AbortError') {
+            console.warn("Webcam play warning:", e);
+          }
+        });
       }
       setIsWebcamActive(true);
 
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
       intervalRef.current = setInterval(captureWebcamFrameAndUpload, 200);
     } catch (err) {
-      console.error("Không thể mở webcam:", err);
-      alert("Không thể truy cập camera máy tính. Vui lòng cấp quyền.");
+      console.warn("Không thể tự động mở webcam:", err);
+      setStreamError(true);
+      if (!isAutoStart) {
+        alert("Không thể truy cập camera máy tính. Vui lòng kiểm tra quyền truy cập thiết bị trong trình duyệt.");
+      }
       stopWebcam();
     }
   };
 
   const captureWebcamFrameAndUpload = async () => {
     if (!videoRef.current || !streamRef.current || isUploadingRef.current) return;
+    if (videoRef.current.readyState < 2) return; // Wait until video has frame data
     isUploadingRef.current = true;
     try {
       const canvas = document.createElement('canvas');

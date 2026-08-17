@@ -100,8 +100,11 @@ class CameraWorkerThread(threading.Thread):
         logger.info(f"Bắt đầu Camera Worker Thread cho camera: {self.camera_id} (Source: {self.source})")
         reader = LatestFrameReader(self.source)
         local_client = get_local_ppe_client()
-        ppe_checker = PPEChecker(cooldown_seconds=30.0)
-        zone_checker = ZoneChecker(debounce_frames=5, cooldown_seconds=30.0)
+        ppe_checker = PPEChecker(cooldown_seconds=5.0)
+        zone_checker = ZoneChecker(debounce_frames=3, cooldown_seconds=5.0)
+
+        from collections import deque
+        frame_buffer = deque(maxlen=72)  # Lưu trữ 6 giây khung hình (72 frames @ 12 FPS) để trích xuất clip video vi phạm
 
         track_counter = 0
         last_inference_time = 0.0
@@ -144,10 +147,15 @@ class CameraWorkerThread(threading.Thread):
                                 pass
                         zone_events = zone_checker.check(self.camera_id, latest_tracks, zones)
 
-                        # Phát sự kiện tới EventBus
-                        for evt in ppe_events + zone_events:
-                            evt["frame_jpg"] = frame.copy()
-                            global_event_bus.publish(evt)
+                        # Phát sự kiện tới EventBus kèm video frames buffer
+                        all_events = ppe_events + zone_events
+                        if all_events:
+                            buffered_video = list(frame_buffer) if len(frame_buffer) > 0 else [frame.copy()]
+                            for evt in all_events:
+                                evt["frame_jpg"] = frame.copy()
+                                evt["video_frames"] = buffered_video
+                                evt["fps"] = 12.0
+                                global_event_bus.publish(evt)
                     except Exception as ai_err:
                         logger.error(f"Lỗi AI inference trong Camera Worker {self.camera_id}: {ai_err}")
 
@@ -159,7 +167,8 @@ class CameraWorkerThread(threading.Thread):
                     conf = trk["confidence"]
                     t_id = trk["track_id"]
 
-                    color = (0, 255, 0) if lbl in ["helmet", "vest"] else (0, 0, 255)
+                    lbl_clean = str(lbl).lower().replace("-", "_").replace(" ", "_")
+                    color = (0, 255, 0) if lbl_clean in ["helmet", "vest"] else (0, 0, 255)
                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                     cv2.putText(
                         annotated_frame,
@@ -170,6 +179,9 @@ class CameraWorkerThread(threading.Thread):
                         color,
                         2
                     )
+
+                # Lưu frame có annotation vào rolling buffer để xuất clip vi phạm
+                frame_buffer.append(annotated_frame.copy())
 
                 # 3. Encode JPEG & Cập nhật Buffer MJPEG (đảm bảo luồng xem video mượt và nét)
                 ret, jpeg_buf = cv2.imencode(".jpg", annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])

@@ -11,10 +11,16 @@ router = APIRouter()
 
 
 @router.post(
-    "/",
+    "",
     response_model=ViolationOut,
     status_code=status.HTTP_201_CREATED,
     summary="Tạo bản ghi vi phạm mới",
+)
+@router.post(
+    "/",
+    response_model=ViolationOut,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
 )
 def create_violation(db: DbDep, violation_in: ViolationCreate):
     violation_service = ViolationService(db)
@@ -46,9 +52,14 @@ def create_violation(db: DbDep, violation_in: ViolationCreate):
 
 
 @router.get(
-    "/",
+    "",
     response_model=ViolationList,
     summary="Lấy danh sách vi phạm",
+)
+@router.get(
+    "/",
+    response_model=ViolationList,
+    include_in_schema=False,
 )
 def get_violations(
     db: DbDep,

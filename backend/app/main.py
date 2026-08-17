@@ -67,6 +67,7 @@ def create_application() -> FastAPI:
         redoc_url="/redoc",
         openapi_url="/openapi.json",
         lifespan=lifespan,
+        redirect_slashes=False,
     )
 
     # ── CORS ──────────────────────────────────────────────────────────────────
@@ -86,9 +87,11 @@ def create_application() -> FastAPI:
     project_root = backend_dir.parent
     
     static_dir = backend_dir / "static"
+    static_violations_dir = static_dir / "violations"
     video_demo_dir = project_root / "video_demo"
     
     static_dir.mkdir(parents=True, exist_ok=True)
+    static_violations_dir.mkdir(parents=True, exist_ok=True)
     video_demo_dir.mkdir(parents=True, exist_ok=True)
     
     application.mount("/static/videos", StaticFiles(directory=str(video_demo_dir)), name="static_videos")

@@ -19,7 +19,14 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
 
     # ── CORS ──────────────────────────────────────────────────────────────────
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
 
     # ── AI / Model ────────────────────────────────────────────────────────────
     MODEL_PATH: str = "ai/weights/best.pt"
@@ -47,7 +54,7 @@ class Settings(BaseSettings):
 
 
     # ── MinIO S3 Storage ───────────────────────────────────────────
-    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ENDPOINT: str = "localhost:9002"
     MINIO_ACCESS_KEY: str = "minioadmin"
     MINIO_SECRET_KEY: str = "minioadmin"
     MINIO_BUCKET_NAME: str = "construction-safety-evidence"
