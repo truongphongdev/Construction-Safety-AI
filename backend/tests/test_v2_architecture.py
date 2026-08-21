@@ -50,6 +50,34 @@ def test_zone_checker_debounce():
     assert len(events) == 1
     assert events[0]["event_type"] == "ZONE_INTRUSION"
 
+def test_zone_checker_normalized_coords():
+    checker = ZoneChecker(debounce_frames=1, cooldown_seconds=5.0)
+    # Zone dạng normalized: 0.0 -> 0.5 (X: 0..320, Y: 0..240 trên frame 640x480)
+    zones = [
+        {
+            "id": "zone-norm",
+            "name": "Normalized Zone",
+            "polygon_coords": [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]],
+            "severity": "CRITICAL"
+        }
+    ]
+
+    # Chân người tại (100, 150) -> nằm trong zone (0..320, 0..240)
+    inside_tracks = [
+        {"track_id": "trk-1", "bbox": [50, 50, 150, 150], "label": "person", "confidence": 0.9}
+    ]
+    # Chân người tại (500, 400) -> nằm ngoài zone
+    outside_tracks = [
+        {"track_id": "trk-2", "bbox": [450, 300, 550, 400], "label": "person", "confidence": 0.9}
+    ]
+
+    events_inside = checker.check("cam-1", inside_tracks, zones, frame_width=640, frame_height=480)
+    assert len(events_inside) == 1
+    assert events_inside[0]["violation_type"] == "ZONE_INTRUSION"
+
+    events_outside = checker.check("cam-1", outside_tracks, zones, frame_width=640, frame_height=480)
+    assert len(events_outside) == 0
+
 def test_event_bus():
     bus = EventBus()
     bus.publish({"event_type": "TEST_EVENT", "data": 123})

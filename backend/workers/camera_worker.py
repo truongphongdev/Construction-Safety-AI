@@ -108,8 +108,11 @@ class CameraWorkerThread(threading.Thread):
 
         track_counter = 0
         last_inference_time = 0.0
+        last_config_check_time = 0.0
         inference_interval = 0.25  # Chạy AI mỗi 0.25s (4 FPS AI) — GPU RTX 2050 xử lý cực nhanh
         latest_tracks: List[dict] = []
+        latest_zones: List[dict] = []
+        cam_config = {"ppe_enabled": True, "zone_enabled": True}
 
         try:
             while not self.stop_event.is_set():
@@ -119,6 +122,39 @@ class CameraWorkerThread(threading.Thread):
                     continue
 
                 now = time.time()
+                h, w = frame.shape[:2]
+
+                # Định kỳ cập nhật config camera & zones (mỗi 15s)
+                if now - last_config_check_time >= 15.0:
+                    last_config_check_time = now
+                    try:
+                        from app.core.database import SessionLocal
+                        from app.models.camera import CameraModel
+                        from app.models.zone import ZoneModel
+                        import uuid
+                        db = SessionLocal()
+                        try:
+                            cam_uuid = uuid.UUID(self.camera_id) if len(self.camera_id) == 36 else None
+                            if cam_uuid:
+                                cam = db.query(CameraModel).filter(CameraModel.id == cam_uuid).first()
+                                if cam:
+                                    cam_config["ppe_enabled"] = getattr(cam, "ppe_enabled", True)
+                                    cam_config["zone_enabled"] = getattr(cam, "zone_enabled", True)
+
+                                zones_db = db.query(ZoneModel).filter(ZoneModel.camera_id == cam_uuid, ZoneModel.is_active == True).all()
+                                latest_zones = [
+                                    {
+                                        "id": str(z.id),
+                                        "name": z.name,
+                                        "polygon_coords": z.polygon_coords,
+                                        "severity": z.severity,
+                                        "color": getattr(z, "color", "#ef4444")
+                                    } for z in zones_db
+                                ]
+                        finally:
+                            db.close()
+                    except Exception:
+                        pass
 
                 # 1. Định kỳ chạy AI Inference nếu đủ thời gian giãn cách
                 if now - last_inference_time >= inference_interval:
@@ -136,16 +172,21 @@ class CameraWorkerThread(threading.Thread):
                             })
                         latest_tracks = tracks
 
-                        # Phân tích vi phạm
-                        ppe_events = ppe_checker.check(self.camera_id, latest_tracks)
+                        # Phân tích vi phạm PPE (nếu bật)
+                        ppe_events = []
+                        if cam_config.get("ppe_enabled", True):
+                            ppe_events = ppe_checker.check(self.camera_id, latest_tracks)
 
-                        zones = []
-                        if self.zones_provider:
-                            try:
-                                zones = self.zones_provider(self.camera_id)
-                            except Exception:
-                                pass
-                        zone_events = zone_checker.check(self.camera_id, latest_tracks, zones)
+                        # Phân tích vi phạm vùng cấm (nếu bật)
+                        zone_events = []
+                        if cam_config.get("zone_enabled", True):
+                            zones = latest_zones
+                            if self.zones_provider:
+                                try:
+                                    zones = self.zones_provider(self.camera_id)
+                                except Exception:
+                                    pass
+                            zone_events = zone_checker.check(self.camera_id, latest_tracks, zones, frame_width=w, frame_height=h)
 
                         # Phát sự kiện tới EventBus kèm video frames buffer
                         all_events = ppe_events + zone_events
@@ -159,8 +200,32 @@ class CameraWorkerThread(threading.Thread):
                     except Exception as ai_err:
                         logger.error(f"Lỗi AI inference trong Camera Worker {self.camera_id}: {ai_err}")
 
-                # 2. Vẽ overlay Bbox & Labels lên frame hiện tại sử dụng kết quả detection mới nhất
+                # 2. Vẽ overlay Bbox & Zone Polygons lên frame
                 annotated_frame = frame.copy()
+
+                # Vẽ vùng cấm (nếu có zones)
+                if cam_config.get("zone_enabled", True) and latest_zones:
+                    overlay = annotated_frame.copy()
+                    for z in latest_zones:
+                        coords = z.get("polygon_coords", [])
+                        if len(coords) < 3:
+                            continue
+                        is_norm = all(0.0 <= pt[0] <= 1.0 and 0.0 <= pt[1] <= 1.0 for pt in coords)
+                        if is_norm:
+                            poly_pts = np.array([[int(pt[0] * w), int(pt[1] * h)] for pt in coords], np.int32)
+                        else:
+                            poly_pts = np.array([[int(pt[0]), int(pt[1])] for pt in coords], np.int32)
+                        poly_pts = poly_pts.reshape((-1, 1, 2))
+
+                        cv2.fillPoly(overlay, [poly_pts], (0, 0, 220))
+                        cv2.polylines(annotated_frame, [poly_pts], True, (0, 0, 255), 2)
+                        if len(poly_pts) > 0:
+                            top_pt = poly_pts[0][0]
+                            cv2.putText(annotated_frame, f"ZONE: {z.get('name', 'Vung cam')}", (top_pt[0], max(top_pt[1] - 5, 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
+
+                    cv2.addWeighted(overlay, 0.25, annotated_frame, 0.75, 0, annotated_frame)
+
+                # Vẽ bounding boxes
                 for trk in latest_tracks:
                     x1, y1, x2, y2 = [int(v) for v in trk["bbox"]]
                     lbl = trk["label"]

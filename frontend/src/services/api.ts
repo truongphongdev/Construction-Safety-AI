@@ -12,8 +12,22 @@ export interface Camera {
   location_desc?: string;
   ip_address?: string;
   status: 'online' | 'offline' | 'error' | 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE' | string;
+  ppe_enabled?: boolean;
+  zone_enabled?: boolean;
   resolution?: string;
   fps?: number;
+  created_at?: string;
+}
+
+export interface Zone {
+  id: string;
+  camera_id: string;
+  name: string;
+  polygon_coords: [number, number][]; // [[x, y], ...]
+  severity: 'LOW' | 'MEDIUM' | 'CRITICAL' | string;
+  color?: string;
+  description?: string;
+  is_active: boolean;
   created_at?: string;
 }
 
@@ -234,7 +248,7 @@ export const checkHealth = async (): Promise<boolean> => {
   }
 };
 
-// ── 6. Delete Camera ─────────────────────────────────────────────────────────
+// ── 6. Delete Camera & Toggle Features ───────────────────────────────────────
 export const deleteCamera = async (cameraId: string): Promise<boolean> => {
   const response = await fetch(`${API_BASE_URL}/cameras/${cameraId}`, {
     method: 'DELETE',
@@ -245,3 +259,84 @@ export const deleteCamera = async (cameraId: string): Promise<boolean> => {
   }
   return true;
 };
+
+export const toggleCameraFeatures = async (
+  cameraId: string,
+  features: { ppe_enabled?: boolean; zone_enabled?: boolean }
+): Promise<Camera> => {
+  const response = await fetch(`${API_BASE_URL}/cameras/${cameraId}/toggle`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(features),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Không thể cập nhật trạng thái bật/tắt');
+  }
+  return await response.json();
+};
+
+// ── 7. Zones API ─────────────────────────────────────────────────────────────
+export const fetchZones = async (cameraId?: string): Promise<Zone[]> => {
+  try {
+    let url = `${API_BASE_URL}/zones`;
+    if (cameraId) {
+      url += `?camera_id=${encodeURIComponent(cameraId)}`;
+    }
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Không thể tải danh sách vùng cấm');
+    return await response.json();
+  } catch (err) {
+    console.warn('[API Service] Lỗi khi fetch zones:', err);
+    return [];
+  }
+};
+
+export const createZone = async (zone: {
+  camera_id: string;
+  name: string;
+  polygon_coords: [number, number][];
+  severity?: string;
+  color?: string;
+  description?: string;
+  is_active?: boolean;
+}): Promise<Zone> => {
+  const response = await fetch(`${API_BASE_URL}/zones`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(zone),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Không thể tạo vùng cấm mới');
+  }
+  return await response.json();
+};
+
+export const updateZone = async (
+  zoneId: string,
+  zone: Partial<Zone>
+): Promise<Zone> => {
+  const response = await fetch(`${API_BASE_URL}/zones/${zoneId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(zone),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Không thể cập nhật vùng cấm');
+  }
+  return await response.json();
+};
+
+export const deleteZone = async (zoneId: string): Promise<boolean> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/zones/${zoneId}`, {
+      method: 'DELETE',
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+

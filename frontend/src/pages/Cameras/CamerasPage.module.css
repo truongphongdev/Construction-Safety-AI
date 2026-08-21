@@ -689,3 +689,245 @@
   }
 }
 
+/* Modern Minimalist Capsule Dock (Single Row) */
+.capsuleDock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-low);
+  border: 1px solid var(--outline-variant);
+  border-radius: 9999px;
+  margin-top: 10px;
+}
+
+.pillToggleGroup {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-lowest);
+  padding: 2px;
+  border-radius: 9999px;
+  border: 1px solid var(--outline-variant);
+  gap: 2px;
+}
+
+.pillToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--on-surface-variant);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.pillToggle:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.pillTogglePpeActive {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #16a34a;
+}
+
+.pillToggleWebcamActive {
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.pillToggleVideoActive {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.45);
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.pillToggleZoneActive {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #dc2626;
+}
+
+.pillToggleInactive {
+  opacity: 0.5;
+  color: var(--text-secondary);
+}
+
+.ledDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.ledGreen {
+  background: #16a34a;
+  box-shadow: 0 0 5px #16a34a;
+}
+
+.ledRed {
+  background: #dc2626;
+  box-shadow: 0 0 5px #dc2626;
+}
+
+.ledOff {
+  background: #9ca3af;
+  box-shadow: none;
+}
+
+/* Right Action Buttons */
+.actionPillGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btnDrawAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.btnDrawAction:hover {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #dc2626;
+  transform: translateY(-1px);
+}
+
+.btnIconAction {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-lowest);
+  color: var(--on-surface);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.btnIconAction:hover {
+  background: var(--surface-container);
+  border-color: var(--outline);
+  color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.btnIconDanger {
+  color: #ef4444;
+}
+
+.btnIconDanger:hover {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
+}
+
+.zoneListBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  margin-top: 6px;
+  overflow-x: auto;
+  font-size: 11px;
+}
+
+.zoneChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.zoneDeleteBtn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zoneDeleteBtn:hover {
+  color: #fff;
+}
+
+/* White Theme Zoom Modal */
+.zoomWhiteCard {
+  position: relative;
+  width: 100%;
+  max-width: 1000px;
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+  border: 1px solid #e2e8f0;
+}
+
+.zoomWhiteHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.zoomWhiteCloseBtn {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 9999px;
+  color: #334155;
+  padding: 6px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.zoomWhiteCloseBtn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+
+
+

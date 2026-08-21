@@ -15,6 +15,8 @@ class CameraBase(BaseModel):
     location_desc: str | None = Field(None, description="Mô tả vị trí lắp đặt")
     ip_address: str | None = Field(None, max_length=45, description="Địa chỉ IP (IPv4 hoặc IPv6)")
     status: CameraStatus = Field(default=CameraStatus.ACTIVE, description="Trạng thái camera")
+    ppe_enabled: bool = Field(default=True, description="Bật/tắt phát hiện PPE (mũ, áo)")
+    zone_enabled: bool = Field(default=True, description="Bật/tắt phát hiện xâm nhập vùng cấm")
 
 
 class CameraCreate(CameraBase):
@@ -26,6 +28,13 @@ class CameraUpdate(BaseModel):
     location_desc: str | None = Field(None, description="Mô tả vị trí lắp đặt")
     ip_address: str | None = Field(None, max_length=45, description="Địa chỉ IP")
     status: CameraStatus | None = Field(None, description="Trạng thái camera")
+    ppe_enabled: bool | None = Field(None, description="Bật/tắt phát hiện PPE")
+    zone_enabled: bool | None = Field(None, description="Bật/tắt phát hiện vùng cấm")
+
+
+class CameraToggle(BaseModel):
+    ppe_enabled: bool | None = Field(None, description="Bật/tắt phát hiện PPE")
+    zone_enabled: bool | None = Field(None, description="Bật/tắt phát hiện vùng cấm")
 
 
 class CameraOut(CameraBase):

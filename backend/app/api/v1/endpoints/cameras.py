@@ -2,7 +2,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.dependencies import DbDep
-from app.schemas.camera import CameraCreate, CameraList, CameraOut, CameraUpdate
+from app.schemas.camera import CameraCreate, CameraList, CameraOut, CameraUpdate, CameraToggle
 from app.services.camera_service import CameraService
 
 router = APIRouter()
@@ -78,6 +78,26 @@ def update_camera(db: DbDep, camera_id: UUID, camera_in: CameraUpdate):
     return camera
 
 
+@router.patch(
+    "/{camera_id}/toggle",
+    response_model=CameraOut,
+    summary="Bật/tắt tính năng PPE hoặc Vùng cấm cho camera",
+)
+def toggle_camera(db: DbDep, camera_id: UUID, toggle_in: CameraToggle):
+    service = CameraService(db)
+    camera = service.toggle_features(
+        camera_id, 
+        ppe_enabled=toggle_in.ppe_enabled, 
+        zone_enabled=toggle_in.zone_enabled
+    )
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Camera không tồn tại hoặc đã bị xóa.",
+        )
+    return camera
+
+
 @router.delete(
     "/{camera_id}",
     summary="Xóa camera (soft delete)",
@@ -91,3 +111,4 @@ def delete_camera(db: DbDep, camera_id: UUID):
             detail="Camera không tồn tại hoặc đã bị xóa trước đó.",
         )
     return {"message": "Camera đã được xóa mềm thành công."}
+

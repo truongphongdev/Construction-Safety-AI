@@ -29,6 +29,13 @@ class ZoneModel(Base):
         default="CRITICAL",
         server_default=text("'CRITICAL'"),
     )
+    color = Column(
+        String(10),
+        nullable=False,
+        default="#ef4444",
+        server_default=text("'#ef4444'"),
+    )
+    description = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
     created_at = Column(
         DateTime(timezone=True),

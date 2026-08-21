@@ -14,6 +14,10 @@ interface WebcamContextType {
   webcamStream: MediaStream | null;
   detections: DetectedObject[];
   totalViolations: number;
+  ppeEnabled: boolean;
+  zoneEnabled: boolean;
+  setPpeEnabled: (val: boolean) => void;
+  setZoneEnabled: (val: boolean) => void;
   startWebcam: () => Promise<void>;
   stopWebcam: () => void;
   streamError: boolean;
@@ -28,7 +32,20 @@ export function WebcamProvider({ children }: { children: React.ReactNode }) {
   const [detections, setDetections] = useState<DetectedObject[]>([]);
   const [totalViolations, setTotalViolations] = useState<number>(0);
   const [streamError, setStreamError] = useState(false);
+  const [ppeEnabled, setPpeEnabled] = useState(true);
+  const [zoneEnabled, setZoneEnabled] = useState(true);
   const cameraId = '00000000-0000-0000-0000-000000000001';
+
+  const ppeRef = useRef(true);
+  const zoneRef = useRef(true);
+
+  useEffect(() => {
+    ppeRef.current = ppeEnabled;
+  }, [ppeEnabled]);
+
+  useEffect(() => {
+    zoneRef.current = zoneEnabled;
+  }, [zoneEnabled]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -163,7 +180,8 @@ export function WebcamProvider({ children }: { children: React.ReactNode }) {
           formData.append('file', blob, 'webcam.jpg');
 
           try {
-            const res = await fetch(`${API_BASE}/webcam/${cameraId}/detect`, {
+            const url = `${API_BASE}/webcam/${cameraId}/detect?ppe_enabled=${ppeRef.current}&zone_enabled=${zoneRef.current}`;
+            const res = await fetch(url, {
               method: 'POST',
               body: formData
             });
@@ -195,6 +213,10 @@ export function WebcamProvider({ children }: { children: React.ReactNode }) {
       webcamStream,
       detections,
       totalViolations,
+      ppeEnabled,
+      zoneEnabled,
+      setPpeEnabled,
+      setZoneEnabled,
       startWebcam,
       stopWebcam,
       streamError,

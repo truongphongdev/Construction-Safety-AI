@@ -5,7 +5,7 @@ import logging
 import base64
 import cv2
 import numpy as np
-from typing import List, Set
+from typing import List, Set, Optional, Dict
 from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, File, UploadFile
@@ -139,9 +139,41 @@ from collections import deque
 webcam_ppe_checkers = {}
 webcam_zone_checkers = {}
 webcam_frame_buffers = {}
+webcam_camera_configs = {}
+
+def get_cached_camera_config(camera_id: str):
+    """Lấy config camera (ppe_enabled, zone_enabled) với cache TTL 15 giây."""
+    now = time.time()
+    cached = webcam_camera_configs.get(camera_id)
+    if cached and (now - cached["time"] < 15.0):
+        return cached["config"]
+
+    from app.core.database import SessionLocal
+    from app.models.camera import CameraModel
+    import uuid
+
+    db = SessionLocal()
+    config = {"ppe_enabled": True, "zone_enabled": True}
+    try:
+        cam_uuid = uuid.UUID(camera_id) if len(camera_id) == 36 else uuid.UUID("00000000-0000-0000-0000-000000000001")
+        cam = db.query(CameraModel).filter(CameraModel.id == cam_uuid).first()
+        if cam:
+            config["ppe_enabled"] = getattr(cam, "ppe_enabled", True)
+            config["zone_enabled"] = getattr(cam, "zone_enabled", True)
+        webcam_camera_configs[camera_id] = {"config": config, "time": now}
+    except Exception:
+        pass
+    finally:
+        db.close()
+    return config
 
 @router.post("/webcam/{camera_id}", summary="Nhận frame từ webcam máy tính và chạy AI")
-async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
+async def process_webcam_frame(
+    camera_id: str, 
+    file: UploadFile = File(...),
+    ppe_enabled: Optional[bool] = None,
+    zone_enabled: Optional[bool] = None
+):
     """
     Nhận frame JPEG từ webcam của client, chạy YOLOv8 Triton,
     kiểm tra PPE + Zone, đẩy event vi phạm ra EventBus,
@@ -152,6 +184,11 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if frame is None:
         raise HTTPException(status_code=400, detail="Không thể decode ảnh.")
+
+    # Lấy config camera nếu không truyền query
+    cfg = get_cached_camera_config(camera_id)
+    effective_ppe = ppe_enabled if ppe_enabled is not None else cfg["ppe_enabled"]
+    effective_zone = zone_enabled if zone_enabled is not None else cfg["zone_enabled"]
 
     # Cấu hình / Lấy checkers & buffers (5s cooldown, 6s video buffer)
     if camera_id not in webcam_ppe_checkers:
@@ -178,31 +215,44 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
             "confidence": det["confidence"]
         })
 
-    # Phân tích vi phạm
-    ppe_events = ppe_checker.check(camera_id, tracks)
+    # Phân tích vi phạm PPE (nếu bật)
+    ppe_events = []
+    if effective_ppe:
+        ppe_events = ppe_checker.check(camera_id, tracks)
     
-    # Tìm vùng cấm cho camera_id (nếu có, với TTL cache 30s)
-    now = time.time()
-    zones = []
-    cached_zone_data = webcam_zone_checkers.get(f"{camera_id}_zones")
-    if cached_zone_data and (now - cached_zone_data["time"] < 30.0):
-        zones = cached_zone_data["zones"]
-    else:
-        from app.core.database import SessionLocal
-        from app.models.zone import ZoneModel
-        import uuid
-        db = SessionLocal()
-        try:
-            cam_uuid = uuid.UUID(camera_id) if len(camera_id) == 36 else uuid.UUID("00000000-0000-0000-0000-000000000001")
-            zones_db = db.query(ZoneModel).filter(ZoneModel.camera_id == cam_uuid, ZoneModel.is_active == True).all()
-            zones = [{"id": str(z.id), "name": z.name, "polygon_coords": z.polygon_coords, "severity": z.severity} for z in zones_db]
-            webcam_zone_checkers[f"{camera_id}_zones"] = {"zones": zones, "time": now}
-        except Exception:
-            pass
-        finally:
-            db.close()
+    # Phân tích vi phạm vùng cấm (nếu bật)
+    zone_events = []
+    if effective_zone:
+        now = time.time()
+        zones = []
+        cached_zone_data = webcam_zone_checkers.get(f"{camera_id}_zones")
+        if cached_zone_data and (now - cached_zone_data["time"] < 15.0):
+            zones = cached_zone_data["zones"]
+        else:
+            from app.core.database import SessionLocal
+            from app.models.zone import ZoneModel
+            import uuid
+            db = SessionLocal()
+            try:
+                cam_uuid = uuid.UUID(camera_id) if len(camera_id) == 36 else uuid.UUID("00000000-0000-0000-0000-000000000001")
+                zones_db = db.query(ZoneModel).filter(ZoneModel.camera_id == cam_uuid, ZoneModel.is_active == True).all()
+                zones = [
+                    {
+                        "id": str(z.id), 
+                        "name": z.name, 
+                        "polygon_coords": z.polygon_coords, 
+                        "severity": z.severity,
+                        "color": getattr(z, "color", "#ef4444")
+                    } for z in zones_db
+                ]
+                webcam_zone_checkers[f"{camera_id}_zones"] = {"zones": zones, "time": now}
+            except Exception:
+                pass
+            finally:
+                db.close()
 
-    zone_events = zone_checker.check(camera_id, tracks, zones)
+        h, w = frame.shape[:2]
+        zone_events = zone_checker.check(camera_id, tracks, zones, frame_width=w, frame_height=h)
 
     # Vẽ overlay lên hình ảnh
     annotated = frame.copy()
@@ -248,19 +298,29 @@ async def process_webcam_frame(camera_id: str, file: UploadFile = File(...)):
     return {
         "annotated_image": base64_img,
         "total_violations": len(ppe_events) + len(zone_events),
+        "ppe_enabled": effective_ppe,
+        "zone_enabled": effective_zone,
         "detected_objects": [
             {
                 "label": trk["label"],
                 "confidence": trk["confidence"],
                 "bbox": trk["bbox"],
-                "is_violation": str(trk["label"]).lower().replace("-", "_") in ["no_helmet", "no_vest", "no_hardhat", "fall", "zone_intrusion"]
+                "is_violation": (
+                    (effective_ppe and str(trk["label"]).lower().replace("-", "_") in ["no_helmet", "no_vest", "no_hardhat", "fall"])
+                    or (effective_zone and str(trk["label"]).lower().replace("-", "_") in ["zone_intrusion"])
+                )
             } for trk in tracks
         ]
     }
 
 
 @router.post("/webcam/{camera_id}/detect", summary="Nhận frame webcam, chạy AI GPU và chỉ trả về tọa độ Bounding Box (Siêu nhẹ)")
-async def detect_webcam_frame_lightweight(camera_id: str, file: UploadFile = File(...)):
+async def detect_webcam_frame_lightweight(
+    camera_id: str, 
+    file: UploadFile = File(...),
+    ppe_enabled: Optional[bool] = None,
+    zone_enabled: Optional[bool] = None
+):
     """
     Endpoint tối ưu hiệu năng cao cho Native Video Canvas Overlay.
     Không encode ảnh Base64 -> Giảm 99% payload xuống 0.5KB.
@@ -271,6 +331,11 @@ async def detect_webcam_frame_lightweight(camera_id: str, file: UploadFile = Fil
     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if frame is None:
         raise HTTPException(status_code=400, detail="Không thể decode ảnh.")
+
+    # Lấy config camera nếu không truyền query
+    cfg = get_cached_camera_config(camera_id)
+    effective_ppe = ppe_enabled if ppe_enabled is not None else cfg["ppe_enabled"]
+    effective_zone = zone_enabled if zone_enabled is not None else cfg["zone_enabled"]
 
     # Cấu hình / Lấy checkers & buffers
     if camera_id not in webcam_ppe_checkers:
@@ -294,7 +359,11 @@ async def detect_webcam_frame_lightweight(camera_id: str, file: UploadFile = Fil
         conf = det["confidence"]
         bbox = det["bbox"]
         lbl_clean = str(lbl).lower().replace("-", "_").replace(" ", "_")
-        is_vio = lbl_clean in ["no_helmet", "no_vest", "no_hardhat", "fall", "zone_intrusion"]
+        
+        is_vio = (
+            (effective_ppe and lbl_clean in ["no_helmet", "no_vest", "no_hardhat", "fall"])
+            or (effective_zone and lbl_clean in ["zone_intrusion"])
+        )
 
         tracks.append({
             "track_id": f"webcam-{idx}",
@@ -309,31 +378,44 @@ async def detect_webcam_frame_lightweight(camera_id: str, file: UploadFile = Fil
             "is_violation": is_vio
         })
 
-    # Phân tích vi phạm
-    ppe_events = ppe_checker.check(camera_id, tracks)
+    # Phân tích vi phạm PPE (nếu bật)
+    ppe_events = []
+    if effective_ppe:
+        ppe_events = ppe_checker.check(camera_id, tracks)
 
-    # Tìm vùng cấm (TTL cache 30s)
-    now = time.time()
-    zones = []
-    cached_zone_data = webcam_zone_checkers.get(f"{camera_id}_zones")
-    if cached_zone_data and (now - cached_zone_data["time"] < 30.0):
-        zones = cached_zone_data["zones"]
-    else:
-        from app.core.database import SessionLocal
-        from app.models.zone import ZoneModel
-        import uuid
-        db = SessionLocal()
-        try:
-            cam_uuid = uuid.UUID(camera_id) if len(camera_id) == 36 else uuid.UUID("00000000-0000-0000-0000-000000000001")
-            zones_db = db.query(ZoneModel).filter(ZoneModel.camera_id == cam_uuid, ZoneModel.is_active == True).all()
-            zones = [{"id": str(z.id), "name": z.name, "polygon_coords": z.polygon_coords, "severity": z.severity} for z in zones_db]
-            webcam_zone_checkers[f"{camera_id}_zones"] = {"zones": zones, "time": now}
-        except Exception:
-            pass
-        finally:
-            db.close()
+    # Phân tích vi phạm vùng cấm (nếu bật)
+    zone_events = []
+    if effective_zone:
+        now = time.time()
+        zones = []
+        cached_zone_data = webcam_zone_checkers.get(f"{camera_id}_zones")
+        if cached_zone_data and (now - cached_zone_data["time"] < 15.0):
+            zones = cached_zone_data["zones"]
+        else:
+            from app.core.database import SessionLocal
+            from app.models.zone import ZoneModel
+            import uuid
+            db = SessionLocal()
+            try:
+                cam_uuid = uuid.UUID(camera_id) if len(camera_id) == 36 else uuid.UUID("00000000-0000-0000-0000-000000000001")
+                zones_db = db.query(ZoneModel).filter(ZoneModel.camera_id == cam_uuid, ZoneModel.is_active == True).all()
+                zones = [
+                    {
+                        "id": str(z.id), 
+                        "name": z.name, 
+                        "polygon_coords": z.polygon_coords, 
+                        "severity": z.severity,
+                        "color": getattr(z, "color", "#ef4444")
+                    } for z in zones_db
+                ]
+                webcam_zone_checkers[f"{camera_id}_zones"] = {"zones": zones, "time": now}
+            except Exception:
+                pass
+            finally:
+                db.close()
 
-    zone_events = zone_checker.check(camera_id, tracks, zones)
+        h, w = frame.shape[:2]
+        zone_events = zone_checker.check(camera_id, tracks, zones, frame_width=w, frame_height=h)
 
     # Lưu frame vào buffer
     frame_buf.append(frame.copy())
@@ -350,5 +432,7 @@ async def detect_webcam_frame_lightweight(camera_id: str, file: UploadFile = Fil
 
     return {
         "total_violations": len(all_events),
+        "ppe_enabled": effective_ppe,
+        "zone_enabled": effective_zone,
         "detected_objects": detected_objects
     }

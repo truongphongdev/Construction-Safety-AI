@@ -13,14 +13,18 @@ router = APIRouter(prefix="/zones", tags=["Zones"])
 class ZoneCreate(BaseModel):
     camera_id: str
     name: str
-    polygon_coords: List[List[float]]  # Ex: [[x1, y1], [x2, y2], [x3, y3], ...]
+    polygon_coords: List[List[float]]  # Ex: [[x1, y1], [x2, y2], [x3, y3], ...] (normalized 0.0-1.0 or pixel)
     severity: str = "CRITICAL"
+    color: str = "#ef4444"
+    description: Optional[str] = None
     is_active: bool = True
 
 class ZoneUpdate(BaseModel):
     name: Optional[str] = None
     polygon_coords: Optional[List[List[float]]] = None
     severity: Optional[str] = None
+    color: Optional[str] = None
+    description: Optional[str] = None
     is_active: Optional[bool] = None
 
 class ZoneResponse(BaseModel):
@@ -29,6 +33,8 @@ class ZoneResponse(BaseModel):
     name: str
     polygon_coords: List[List[float]]
     severity: str
+    color: str = "#ef4444"
+    description: Optional[str] = None
     is_active: bool
     created_at: str
 
@@ -51,6 +57,8 @@ def list_zones(camera_id: Optional[str] = None, db: Session = Depends(get_db)):
             "name": z.name,
             "polygon_coords": z.polygon_coords,
             "severity": z.severity,
+            "color": z.color or "#ef4444",
+            "description": z.description,
             "is_active": z.is_active,
             "created_at": z.created_at.isoformat() if z.created_at else None,
         }
@@ -74,6 +82,8 @@ def create_zone(req: ZoneCreate, db: Session = Depends(get_db)):
         name=req.name,
         polygon_coords=req.polygon_coords,
         severity=req.severity,
+        color=req.color,
+        description=req.description,
         is_active=req.is_active,
     )
     db.add(zone)
@@ -86,6 +96,8 @@ def create_zone(req: ZoneCreate, db: Session = Depends(get_db)):
         "name": zone.name,
         "polygon_coords": zone.polygon_coords,
         "severity": zone.severity,
+        "color": zone.color or "#ef4444",
+        "description": zone.description,
         "is_active": zone.is_active,
         "created_at": zone.created_at.isoformat(),
     }
@@ -107,6 +119,10 @@ def update_zone(zone_id: str, req: ZoneUpdate, db: Session = Depends(get_db)):
         zone.polygon_coords = req.polygon_coords
     if req.severity is not None:
         zone.severity = req.severity
+    if req.color is not None:
+        zone.color = req.color
+    if req.description is not None:
+        zone.description = req.description
     if req.is_active is not None:
         zone.is_active = req.is_active
 
@@ -119,6 +135,8 @@ def update_zone(zone_id: str, req: ZoneUpdate, db: Session = Depends(get_db)):
         "name": zone.name,
         "polygon_coords": zone.polygon_coords,
         "severity": zone.severity,
+        "color": zone.color or "#ef4444",
+        "description": zone.description,
         "is_active": zone.is_active,
     }
 
@@ -126,11 +144,10 @@ def update_zone(zone_id: str, req: ZoneUpdate, db: Session = Depends(get_db)):
 def delete_zone(zone_id: str, db: Session = Depends(get_db)):
     try:
         z_uuid = uuid.UUID(zone_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="zone_id không hợp lệ.")
-
-    zone = db.query(ZoneModel).filter(ZoneModel.id == z_uuid).first()
-    if zone:
-        db.delete(zone)
-        db.commit()
+        zone = db.query(ZoneModel).filter(ZoneModel.id == z_uuid).first()
+        if zone:
+            db.delete(zone)
+            db.commit()
+    except Exception:
+        pass
     return None

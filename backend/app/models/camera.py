@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, DateTime, Text, CheckConstraint, text
+from sqlalchemy import Column, String, DateTime, Text, Boolean, CheckConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -25,6 +25,8 @@ class CameraModel(Base):
         default="ACTIVE",
         server_default=text("'ACTIVE'"),
     )
+    ppe_enabled = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    zone_enabled = Column(Boolean, nullable=False, default=True, server_default=text("true"))
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,

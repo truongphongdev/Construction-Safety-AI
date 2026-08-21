@@ -32,7 +32,9 @@ class CameraService:
             name=obj_in.name,
             location_desc=obj_in.location_desc,
             ip_address=obj_in.ip_address,
-            status=obj_in.status,
+            status=obj_in.status.value if hasattr(obj_in.status, 'value') else obj_in.status,
+            ppe_enabled=obj_in.ppe_enabled,
+            zone_enabled=obj_in.zone_enabled,
         )
         self.db.add(db_camera)
         self.db.commit()
@@ -47,6 +49,8 @@ class CameraService:
 
         update_data = obj_in.model_dump(exclude_unset=True)
         for field, value in update_data.items():
+            if field == 'status' and hasattr(value, 'value'):
+                value = value.value
             setattr(db_camera, field, value)
 
         self.db.commit()
@@ -62,6 +66,21 @@ class CameraService:
             return True
         return False
 
+    def toggle_features(self, camera_id: UUID, ppe_enabled: bool | None = None, zone_enabled: bool | None = None) -> CameraModel | None:
+        """Bật/tắt phát hiện PPE hoặc Vùng cấm cho camera."""
+        db_camera = self.get_camera(camera_id)
+        if not db_camera:
+            return None
+
+        if ppe_enabled is not None:
+            db_camera.ppe_enabled = ppe_enabled
+        if zone_enabled is not None:
+            db_camera.zone_enabled = zone_enabled
+
+        self.db.commit()
+        self.db.refresh(db_camera)
+        return db_camera
+
     def create_camera_with_id(self, obj_in: CameraCreate, camera_id: UUID) -> CameraModel:
         """Tạo thiết bị camera mới với ID chỉ định."""
         db_camera = CameraModel(
@@ -70,6 +89,8 @@ class CameraService:
             location_desc=obj_in.location_desc,
             ip_address=obj_in.ip_address,
             status=obj_in.status.value if hasattr(obj_in.status, 'value') else obj_in.status,
+            ppe_enabled=obj_in.ppe_enabled,
+            zone_enabled=obj_in.zone_enabled,
         )
         self.db.add(db_camera)
         self.db.commit()

@@ -1,82 +1,111 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import styles from './CamerasPage.module.css';
 import { fetchCameras, createCamera, deleteCamera } from '../../services';
 import type { Camera as ApiCamera } from '../../services';
 import { CameraCard } from './CameraCard';
 import type { CameraItem } from './CameraCard';
+import { useCameraMedia } from '@/contexts';
 
 const LAPTOP_WEBCAM_ID = '00000000-0000-0000-0000-000000000001';
 
 export default function CamerasPage() {
-  const [cameras, setCameras] = useState<CameraItem[]>([
-    { 
-      id: LAPTOP_WEBCAM_ID, 
-      name: 'Camera 01 - Webcam Laptop', 
-      location: 'Webcam Laptop', 
-      status: 'online' 
-    },
-  ]);
+  const {
+    uploadedVideos,
+    customCameras,
+    saveCameraVideo,
+    removeCameraVideo,
+    addCustomCamera,
+    removeCustomCamera
+  } = useCameraMedia();
 
+  const [apiCameras, setApiCameras] = useState<CameraItem[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCamName, setNewCamName] = useState('');
   const [newCamLoc, setNewCamLoc] = useState('');
   const [newRtspUrl, setNewRtspUrl] = useState('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
-  // Helper to update cameras state
-  const updateCamerasState = (updater: (prev: CameraItem[]) => CameraItem[]) => {
-    setCameras(prev => {
-      const next = updater(prev);
-      const assignments = next.map(c => ({ id: c.id, videoName: c.videoName, videoBlob: c.videoBlob }));
-      localStorage.setItem('camera_video_assignments', JSON.stringify(assignments));
-      return next;
-    });
-  };
-
   useEffect(() => {
     let isMounted = true;
 
     const loadCameras = async () => {
       try {
-        const apiCams = await fetchCameras();
+        const cams = await fetchCameras();
         if (isMounted) {
-          if (apiCams && apiCams.length > 0) {
-            const mappedCams = apiCams.map((c: ApiCamera) => ({
+          if (cams && cams.length > 0) {
+            const mappedCams = cams.map((c: ApiCamera) => ({
               id: c.id,
               name: c.name || 'Camera 01 - Webcam Laptop',
               location: c.location || c.location_desc || 'Webcam Laptop',
               status: 'online' as const,
+              ppe_enabled: c.ppe_enabled ?? true,
+              zone_enabled: c.zone_enabled ?? true,
               rtspUrl: c.rtsp_url || c.ip_address,
             }));
-            setCameras(mappedCams);
+            setApiCameras(mappedCams);
           } else {
-            // Mặc định luôn có camera laptop
-            setCameras([{
+            setApiCameras([{
               id: LAPTOP_WEBCAM_ID,
               name: 'Camera 01 - Webcam Laptop',
               location: 'Webcam Laptop',
-              status: 'online'
+              status: 'online',
+              ppe_enabled: true,
+              zone_enabled: true
             }]);
           }
         }
       } catch {
         if (isMounted) {
-          setCameras([{
+          setApiCameras([{
             id: LAPTOP_WEBCAM_ID,
             name: 'Camera 01 - Webcam Laptop',
             location: 'Webcam Laptop',
-            status: 'online'
+            status: 'online',
+            ppe_enabled: true,
+            zone_enabled: true
           }]);
         }
       }
     };
 
-    // Xóa các camera rác đã lưu trong localStorage cũ nếu có
-    localStorage.removeItem('camera_video_assignments');
-
     loadCameras();
     return () => { isMounted = false; };
   }, []);
+
+  // Merge API cameras, custom added cameras, and attach cached uploaded videos
+  const mergedCameras = useMemo(() => {
+    const map = new Map<string, CameraItem>();
+
+    // Add default laptop webcam if not present
+    map.set(LAPTOP_WEBCAM_ID, {
+      id: LAPTOP_WEBCAM_ID,
+      name: 'Camera 01 - Webcam Laptop',
+      location: 'Webcam Laptop',
+      status: 'online',
+      ppe_enabled: true,
+      zone_enabled: true
+    });
+
+    // Add API cameras
+    apiCameras.forEach(c => map.set(c.id, c));
+
+    // Add custom local cameras
+    customCameras.forEach(c => {
+      if (!map.has(c.id)) {
+        map.set(c.id, c);
+      }
+    });
+
+    // Enrich with cached video blobs
+    return Array.from(map.values()).map(c => {
+      const cached = uploadedVideos[c.id];
+      return {
+        ...c,
+        videoBlob: cached?.blobUrl || c.videoBlob,
+        videoName: cached?.fileName || c.videoName
+      };
+    });
+  }, [apiCameras, customCameras, uploadedVideos]);
 
   const validateVideoFile = (file: File): boolean => {
     const allowedExtensions = ['.mp4', '.webm'];
@@ -97,14 +126,9 @@ export default function CamerasPage() {
     return true;
   };
 
-  const handleAssignVideo = (camId: string, videoName: string) => {
-    updateCamerasState(prev => prev.map(c => c.id === camId ? { ...c, videoName, videoBlob: undefined } : c));
-  };
-
   const handleUploadFile = (camId: string, file: File) => {
     if (!validateVideoFile(file)) return;
-    const blobUrl = URL.createObjectURL(file);
-    updateCamerasState(prev => prev.map(c => c.id === camId ? { ...c, videoBlob: blobUrl, videoName: undefined } : c));
+    saveCameraVideo(camId, file);
   };
 
   const handleDeleteCamera = async (cameraId: string) => {
@@ -115,15 +139,19 @@ export default function CamerasPage() {
     if (!window.confirm('Bạn có chắc chắn muốn xóa camera này không?')) return;
     try {
       await deleteCamera(cameraId);
-      updateCamerasState(prev => prev.filter(c => c.id !== cameraId));
-    } catch (err: any) {
-      alert('Lỗi khi xóa camera: ' + err.message);
+    } catch {
+      // ignore DB failure and still remove from state
     }
+    setApiCameras(prev => prev.filter(c => c.id !== cameraId));
+    removeCustomCamera(cameraId);
+    removeCameraVideo(cameraId);
   };
 
   const handleAddCamera = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCamName) return;
+
+    let newId = `00000000-0000-0000-0000-${String(Date.now()).padStart(12, '0').slice(-12)}`;
 
     try {
       const created = await createCamera({
@@ -132,33 +160,31 @@ export default function CamerasPage() {
         ip_address: newRtspUrl || '127.0.0.1',
         status: 'ACTIVE' as any
       });
-
-      const newCam: CameraItem = {
-        id: created.id,
-        name: created.name,
-        location: created.location_desc || newCamLoc || 'Công trường',
-        status: 'online',
-        rtspUrl: created.ip_address || newRtspUrl || undefined,
-        videoBlob: uploadedFile ? URL.createObjectURL(uploadedFile) : undefined,
-      };
-
-      updateCamerasState(prev => [...prev, newCam]);
+      newId = created.id;
     } catch (err) {
-      console.error('Không thể lưu camera mới vào DB:', err);
-      const fallbackId = `00000000-0000-0000-0000-${String(Date.now()).padStart(12, '0').slice(-12)}`;
-      const newCam: CameraItem = {
-        id: fallbackId,
-        name: newCamName,
-        location: newCamLoc || 'Công trường',
-        status: 'online',
-        rtspUrl: newRtspUrl || undefined,
-        videoBlob: uploadedFile ? URL.createObjectURL(uploadedFile) : undefined,
-      };
-      updateCamerasState(prev => [...prev, newCam]);
+      console.warn('Không thể lưu camera mới vào DB, sử dụng local fallback:', err);
+    }
+
+    const newCam: CameraItem = {
+      id: newId,
+      name: newCamName,
+      location: newCamLoc || 'Công trường',
+      status: 'online',
+      rtspUrl: newRtspUrl || undefined,
+      ppe_enabled: true,
+      zone_enabled: true
+    };
+
+    addCustomCamera(newCam);
+
+    if (uploadedFile) {
+      saveCameraVideo(newId, uploadedFile);
     }
 
     setShowAddModal(false);
-    setNewCamName(''); setNewCamLoc(''); setNewRtspUrl('');
+    setNewCamName('');
+    setNewCamLoc('');
+    setNewRtspUrl('');
     setUploadedFile(null);
   };
 
@@ -180,12 +206,12 @@ export default function CamerasPage() {
 
       {/* Camera Grid */}
       <div className={styles.camerasGrid}>
-        {cameras.map(cam => (
+        {mergedCameras.map(cam => (
           <CameraCard
             key={cam.id}
             cam={cam}
-            onAssignVideo={handleAssignVideo}
             onUploadFile={handleUploadFile}
+            onRemoveVideo={removeCameraVideo}
             onDelete={handleDeleteCamera}
           />
         ))}
