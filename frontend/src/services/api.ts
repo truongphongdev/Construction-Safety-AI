@@ -340,3 +340,147 @@ export const deleteZone = async (zoneId: string): Promise<boolean> => {
   }
 };
 
+// ── 8. Reports & Analytics API ──────────────────────────────────────────────
+export interface ReportSummary {
+  total_violations: number;
+  total_cameras: number;
+  compliance_rate: number;
+  false_alarm_rate: number;
+  avg_response_minutes: number;
+  pending_count: number;
+  confirmed_count: number;
+  warning_sent_count: number;
+  false_alarm_count: number;
+  trend_percentage: number;
+}
+
+export interface TrendDataPoint {
+  date: string;
+  label: string;
+  violations: number;
+  critical_count: number;
+  medium_count: number;
+  low_count: number;
+}
+
+export interface TypeDistribution {
+  type_code: string;
+  type_name: string;
+  count: number;
+  percentage: number;
+}
+
+export interface SeverityDistribution {
+  severity: string;
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface HourlyDistribution {
+  hour: number;
+  label: string;
+  count: number;
+}
+
+export interface CameraHotspot {
+  camera_id: string;
+  camera_name: string;
+  location: string;
+  violation_count: number;
+  critical_count: number;
+  percentage: number;
+}
+
+export interface FullReportResponse {
+  period_start: string;
+  period_end: string;
+  summary: ReportSummary;
+  trend: TrendDataPoint[];
+  by_type: TypeDistribution[];
+  by_severity: SeverityDistribution[];
+  hourly: HourlyDistribution[];
+  hotspots: CameraHotspot[];
+}
+
+export interface ReportFilterParams {
+  range?: 'today' | '7days' | '30days' | 'month' | 'custom' | string;
+  start_date?: string;
+  end_date?: string;
+  camera_id?: string;
+}
+
+export const fetchFullReport = async (params: ReportFilterParams = {}): Promise<FullReportResponse> => {
+  const query = new URLSearchParams();
+  if (params.range) query.set('range', params.range);
+  if (params.start_date) query.set('start_date', params.start_date);
+  if (params.end_date) query.set('end_date', params.end_date);
+  if (params.camera_id && params.camera_id !== 'all') query.set('camera_id', params.camera_id);
+
+  const response = await fetch(`${API_BASE_URL}/reports?${query.toString()}`);
+  if (!response.ok) {
+    throw new Error(`HTTP error ${response.status}: Không thể tải dữ liệu báo cáo thống kê`);
+  }
+  return await response.json();
+};
+
+export const getReportCsvDownloadUrl = (params: ReportFilterParams = {}): string => {
+  const query = new URLSearchParams();
+  if (params.range) query.set('range', params.range);
+  if (params.start_date) query.set('start_date', params.start_date);
+  if (params.end_date) query.set('end_date', params.end_date);
+  if (params.camera_id && params.camera_id !== 'all') query.set('camera_id', params.camera_id);
+
+  return `${API_BASE_URL}/reports/export/csv?${query.toString()}`;
+};
+
+// ── 9. Authentication API (Non-JWT Direct User Auth) ─────────────────────────
+export interface AuthUser {
+  id: string;
+  username: string;
+  full_name: string | null;
+  role: string;
+}
+
+export interface AuthApiResponse {
+  success: boolean;
+  message: string;
+  user: AuthUser;
+}
+
+export const loginUser = async (username: string, password: string): Promise<AuthApiResponse> => {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Tên đăng nhập hoặc mật khẩu không chính xác.');
+  }
+
+  return await response.json();
+};
+
+export const registerUser = async (
+  username: string,
+  password: string,
+  full_name?: string
+): Promise<AuthApiResponse> => {
+  const response = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, full_name }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Đăng ký tài khoản không thành công.');
+  }
+
+  return await response.json();
+};
+
+
+

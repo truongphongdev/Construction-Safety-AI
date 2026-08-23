@@ -1,33 +1,59 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts';
 import styles from './RegisterPage.module.css';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const { register } = useAuth();
   const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [agreeTerms, setAgreeTerms] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName || !email || !password || !confirmPassword) {
-      alert('Vui lòng nhập đầy đủ thông tin.');
+    setError(null);
+    setSuccessMsg(null);
+
+    if (!username.trim() || !password || !confirmPassword) {
+      setError('Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.');
+      return;
+    }
+    if (username.trim().length < 3) {
+      setError('Tên đăng nhập phải có ít nhất 3 ký tự.');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Mật khẩu phải có tối thiểu 6 ký tự.');
       return;
     }
     if (password !== confirmPassword) {
-      alert('Mật khẩu xác nhận không khớp.');
+      setError('Mật khẩu xác nhận không trùng khớp.');
       return;
     }
     if (!agreeTerms) {
-      alert('Bạn phải đồng ý với Điều khoản dịch vụ và Chính sách bảo mật.');
+      setError('Bạn phải đồng ý với Quy định bảo mật và an toàn hệ thống.');
       return;
     }
 
-    console.log('User registered:', { fullName, email });
-    alert('Đăng ký tài khoản thành công! Quay lại trang đăng nhập.');
-    navigate('/login');
+    setLoading(true);
+    try {
+      await register(username.trim(), password, fullName.trim() || undefined);
+      setSuccessMsg('Đăng ký tài khoản thành công! Đang chuyển hướng đến trang đăng nhập...');
+      setTimeout(() => {
+        navigate('/login');
+      }, 1200);
+    } catch (err: unknown) {
+      console.error('Đăng ký thất bại:', err);
+      setError(err instanceof Error ? err.message : 'Không thể đăng ký tài khoản.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -35,8 +61,50 @@ export default function RegisterPage() {
       {/* Registration Header */}
       <div className={styles.header}>
         <h1 className={styles.title}>VisionGuard AI</h1>
-        <p className={styles.subtitle}>Tạo tài khoản mới</p>
+        <p className={styles.subtitle}>Tạo tài khoản quản trị an toàn</p>
       </div>
+
+      {error && (
+        <div
+          className="alert alert-danger"
+          style={{
+            padding: '10px 14px',
+            marginBottom: '16px',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '13px',
+            background: 'var(--color-danger-bg)',
+            color: 'var(--color-danger)',
+            border: '1px solid var(--color-danger)',
+          }}
+        >
+          <span className="material-symbols-outlined text-[18px]">error</span>
+          <span>{error}</span>
+        </div>
+      )}
+
+      {successMsg && (
+        <div
+          className="alert alert-success"
+          style={{
+            padding: '10px 14px',
+            marginBottom: '16px',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '13px',
+            background: 'var(--color-success-bg)',
+            color: 'var(--color-success)',
+            border: '1px solid var(--color-success)',
+          }}
+        >
+          <span className="material-symbols-outlined text-[18px]">check_circle</span>
+          <span>{successMsg}</span>
+        </div>
+      )}
 
       {/* Register Form */}
       <form className={styles.form} onSubmit={handleSubmit}>
@@ -44,32 +112,32 @@ export default function RegisterPage() {
         <div className="input-group">
           <label className="input-label" htmlFor="fullName">Họ và Tên</label>
           <div className="input-wrapper">
-            <span className="material-symbols-outlined input-icon">person</span>
+            <span className="material-symbols-outlined input-icon">badge</span>
             <input
               type="text"
               id="fullName"
               className="input-field"
-              placeholder="Nhập họ và tên"
-              required
+              placeholder="VD: Nguyễn Văn An"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
             />
           </div>
         </div>
 
-        {/* Work Email */}
+        {/* Username */}
         <div className="input-group">
-          <label className="input-label" htmlFor="email">Email Công Việc</label>
+          <label className="input-label" htmlFor="username">Tên đăng nhập</label>
           <div className="input-wrapper">
-            <span className="material-symbols-outlined input-icon">mail</span>
+            <span className="material-symbols-outlined input-icon">person</span>
             <input
-              type="email"
-              id="email"
+              type="text"
+              id="username"
               className="input-field"
-              placeholder="name@company.com"
+              placeholder="VD: nguyenvanan"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
             />
           </div>
         </div>
@@ -83,8 +151,9 @@ export default function RegisterPage() {
               type="password"
               id="password"
               className="input-field"
-              placeholder="••••••••"
+              placeholder="Tối thiểu 6 ký tự"
               required
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
@@ -95,13 +164,14 @@ export default function RegisterPage() {
         <div className="input-group">
           <label className="input-label" htmlFor="confirmPassword">Xác nhận Mật khẩu</label>
           <div className="input-wrapper">
-            <span className="material-symbols-outlined input-icon">lock</span>
+            <span className="material-symbols-outlined input-icon">lock_reset</span>
             <input
               type="password"
               id="confirmPassword"
               className="input-field"
-              placeholder="••••••••"
+              placeholder="Nhập lại mật khẩu"
               required
+              autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
             />
@@ -118,20 +188,28 @@ export default function RegisterPage() {
             onChange={(e) => setAgreeTerms(e.target.checked)}
           />
           <label htmlFor="terms" className={styles.checkboxLabel}>
-            Tôi đồng ý với{' '}
-            <a href="#" className={styles.termsLink} onClick={(e) => { e.preventDefault(); alert('Điều khoản dịch vụ'); }}>
-              Điều khoản dịch vụ
-            </a>{' '}
-            và{' '}
-            <a href="#" className={styles.termsLink} onClick={(e) => { e.preventDefault(); alert('Chính sách bảo mật'); }}>
-              Chính sách bảo mật
-            </a>.
+            Tôi cam kết tuân thủ quy chế an toàn lao động và bảo mật thông tin nội bộ.
           </label>
         </div>
 
         {/* Submit Button */}
-        <button type="submit" className="btn btn-primary styles.submitBtn" style={{ width: '100%' }}>
-          Tạo Tài Khoản
+        <button
+          type="submit"
+          className="btn btn-primary styles.submitBtn"
+          style={{ width: '100%', marginTop: '8px' }}
+          disabled={loading}
+        >
+          {loading ? (
+            <>
+              <span className="material-symbols-outlined text-sm animate-spin">sync</span>
+              Đang tạo tài khoản...
+            </>
+          ) : (
+            <>
+              Tạo Tài Khoản
+              <span className="material-symbols-outlined text-sm">how_to_reg</span>
+            </>
+          )}
         </button>
       </form>
 
@@ -139,7 +217,7 @@ export default function RegisterPage() {
       <div className={styles.footer}>
         Đã có tài khoản?{' '}
         <Link to="/login" className={styles.loginLink}>
-          Đăng nhập thay thế
+          Đăng nhập ngay
         </Link>
       </div>
     </>

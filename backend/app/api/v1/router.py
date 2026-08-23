@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, cameras, detection, health, stream, users, violations, zones
+from app.api.v1.endpoints import auth, cameras, detection, health, reports, stream, users, violations, zones
 
 api_router = APIRouter()
 
@@ -11,4 +11,5 @@ api_router.include_router(detection.router, prefix="/detect", tags=["Detection"]
 api_router.include_router(users.router, prefix="/users", tags=["Users"])
 api_router.include_router(cameras.router, prefix="/cameras", tags=["Cameras"])
 api_router.include_router(violations.router, prefix="/violations", tags=["Violations"])
+api_router.include_router(reports.router, prefix="/reports", tags=["Reports & Analytics"])
 api_router.include_router(stream.router, tags=["Video Stream & Alerts"])

@@ -1,80 +1,122 @@
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.auth import hash_password, verify_password, create_access_token, create_refresh_token, decode_token, get_current_user
+from app.core.auth import hash_password, verify_password
 from app.models.user import UserModel
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
+
 class LoginRequest(BaseModel):
-    username_or_email: str
-    password: str
+    username: str = Field(..., description="Tên đăng nhập hoặc email")
+    password: str = Field(..., description="Mật khẩu")
 
-class RefreshRequest(BaseModel):
-    refresh_token: str
 
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    user: dict
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50, description="Tên đăng nhập")
+    password: str = Field(..., min_length=6, description="Mật khẩu (tối thiểu 6 ký tự)")
+    full_name: str | None = Field(None, max_length=100, description="Họ và tên")
+    role: str = Field("ADMIN", description="Vai trò người dùng (ADMIN, SUPER_ADMIN)")
 
-@router.post("/login", response_model=TokenResponse)
+
+class UserResponse(BaseModel):
+    id: str
+    username: str
+    full_name: str | None
+    role: str
+
+
+class AuthResponse(BaseModel):
+    success: bool = True
+    message: str
+    user: UserResponse
+
+
+@router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
+def register(req: RegisterRequest, db: Session = Depends(get_db)) -> Any:
+    """Đăng ký tài khoản người dùng mới (lưu vào database)."""
+    # Chuẩn hóa username (bỏ khoảng trắng)
+    clean_username = req.username.strip().lower()
+    if not clean_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tên đăng nhập không được để trống.",
+        )
+
+    # Kiểm tra xem tên đăng nhập đã tồn tại chưa
+    existing_user = db.query(UserModel).filter(
+        UserModel.username == clean_username
+    ).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Tên đăng nhập '{clean_username}' đã tồn tại trong hệ thống.",
+        )
+
+    # Tạo người dùng mới
+    hashed_pwd = hash_password(req.password)
+    new_user = UserModel(
+        username=clean_username,
+        password_hash=hashed_pwd,
+        full_name=req.full_name.strip() if req.full_name else clean_username,
+        role=req.role if req.role in ["ADMIN", "SUPER_ADMIN"] else "ADMIN",
+        is_active=True,
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return {
+        "success": True,
+        "message": "Đăng ký tài khoản thành công!",
+        "user": {
+            "id": str(new_user.id),
+            "username": new_user.username,
+            "full_name": new_user.full_name,
+            "role": new_user.role,
+        },
+    }
+
+
+@router.post("/login", response_model=AuthResponse)
 def login(req: LoginRequest, db: Session = Depends(get_db)) -> Any:
-    # UserModel chỉ có username, không có email — chỉ query theo username
+    """Đăng nhập hệ thống (xác thực trực tiếp qua database)."""
+    clean_username = req.username.strip().lower()
+    
     user = db.query(UserModel).filter(
-        UserModel.username == req.username_or_email
+        UserModel.username == clean_username
     ).first()
 
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Tên đăng nhập hoặc mật khẩu không chính xác."
+            detail="Tên đăng nhập hoặc mật khẩu không chính xác.",
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản này đã bị tạm khóa.",
         )
 
     if not verify_password(req.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Tên đăng nhập hoặc mật khẩu không chính xác."
+            detail="Tên đăng nhập hoặc mật khẩu không chính xác.",
         )
 
-    access_token = create_access_token({"sub": str(user.id), "role": user.role})
-    refresh_token = create_refresh_token({"sub": str(user.id)})
-
     return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
+        "success": True,
+        "message": "Đăng nhập thành công!",
         "user": {
             "id": str(user.id),
             "username": user.username,
             "full_name": user.full_name,
             "role": user.role,
-        }
+        },
     }
 
-@router.post("/refresh")
-def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> Any:
-    payload = decode_token(req.refresh_token)
-    if payload.get("type") != "refresh":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Loại token không đúng.")
-
-    user_id = payload.get("sub")
-    user = db.query(UserModel).filter(UserModel.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Người dùng không tồn tại.")
-
-    new_access_token = create_access_token({"sub": str(user.id), "role": user.role})
-    return {"access_token": new_access_token, "token_type": "bearer"}
-
-@router.get("/me")
-def get_me(current_user: UserModel = Depends(get_current_user)) -> Any:
-    return {
-        "id": str(current_user.id),
-        "username": current_user.username,
-        "full_name": current_user.full_name,
-        "role": current_user.role,
-    }

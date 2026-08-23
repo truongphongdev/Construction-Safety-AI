@@ -1,6 +1,7 @@
 import { NavLink, Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import useTheme from '@/hooks/useTheme';
+import { useAuth } from '@/contexts';
 import styles from './MainLayout.module.css';
 import { mapViolationType } from '@/utils/translation';
 
@@ -17,7 +18,9 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
   const [emergencyAlertActive, setEmergencyAlertActive] = useState(false);
+
   
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -186,9 +189,25 @@ export default function MainLayout() {
           </div>
           
           {/* Profile */}
-          <button className={styles.profileBtn} aria-label="Profile" onClick={() => navigate('/settings')}>
+          <button
+            className={styles.profileBtn}
+            aria-label="Profile"
+            onClick={() => navigate('/settings')}
+            title={user ? `${user.full_name || user.username} (${user.role})` : 'Tài khoản'}
+          >
             <div className={styles.avatar}>
-              <span>AD</span>
+              <span>
+                {user?.full_name
+                  ? user.full_name
+                      .split(' ')
+                      .filter(Boolean)
+                      .slice(-2)
+                      .map((w) => w[0].toUpperCase())
+                      .join('')
+                  : user?.username
+                  ? user.username.substring(0, 2).toUpperCase()
+                  : 'AD'}
+              </span>
             </div>
           </button>
         </div>
@@ -264,14 +283,22 @@ export default function MainLayout() {
 
         {/* Sidebar Footer Link list */}
         <div className={styles.sidebarFooter}>
-          <NavLink to="/help" className={styles.sidebarFooterItem}>
-            <span className="material-symbols-outlined">help</span>
+          <NavLink to="/help" className={styles.sidebarFooterItem} title="Trợ giúp & Hướng dẫn">
+            <span className="material-symbols-outlined text-[18px]">help</span>
             <span>Trợ giúp</span>
           </NavLink>
-          <Link to="/login" className={styles.sidebarFooterItem}>
-            <span className="material-symbols-outlined">logout</span>
+          <button
+            className={styles.sidebarFooterItem}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+            onClick={() => {
+              logout();
+              navigate('/login');
+            }}
+            title="Đăng xuất khỏi hệ thống"
+          >
+            <span className="material-symbols-outlined text-[18px]">logout</span>
             <span>Đăng xuất</span>
-          </Link>
+          </button>
         </div>
       </nav>
 
